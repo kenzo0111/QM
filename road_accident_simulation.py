@@ -249,21 +249,21 @@ def calculate_risk_score(impact_force: float, severity: str, environment: Enviro
     return round(max(0.0, min(10.0, base_score)), 2)
 
 
-def generate_systemic_summary(cause: str, driver_profile: DriverProfile | None, environment: EnvironmentState | None, plan: InterventionPlan | None) -> str:
-    """Create a short paragraph tying drivers, vehicles, road, and environment (Systems Theory)."""
+def generate_systemic_summary(cause: str, driver_profile: DriverProfile | None, environment: EnvironmentState | None, plan: InterventionPlan | None, vehicle1: Vehicle | None = None, vehicle2: Vehicle | None = None, pedestrian: Pedestrian | None = None, initial_v1: float | None = None, initial_v2: float | None = None) -> str:
+    """Create a systems theory summary based on the accident cause."""
 
-    components = []
-    if driver_profile:
-        components.append(f"Driver state ({driver_profile.factor}) affected reaction time ({driver_profile.notes})")
-    if environment:
-        components.append(f"Road geometry ({environment.curvature}) with {environment.road_condition} surface influenced braking distance")
-        if environment.lighting_condition == "poor":
-            components.append("Limited lighting stretched driver perception")
-    components.append(f"Primary cause flagged: {cause}")
-    if plan and plan.interventions:
-        named = ", ".join(intervention.replace('_', ' ') for intervention in plan.interventions)
-        components.append(f"Interventions tested: {named}")
-    return "; ".join(components) + "."
+    cause_summaries = {
+        "Overspeeding": "Overspeeding amplifies the impact of poor road conditions and reduces reaction time, leading to severe collisions in systems theory where human factors interact with vehicle dynamics and environmental constraints.",
+        "Drunk Driving": "Drunk driving impairs human judgment and reaction time, interacting with vehicle control systems and road geometry to create hazardous situations in systems theory.",
+        "Mechanical Failure": "Mechanical failure in vehicle systems interacts with human response capabilities and road conditions, creating unexpected hazards in systems theory.",
+        "Fatigue": "Driver fatigue reduces reaction time and decision-making, interacting with lighting conditions and road geometry in systems theory to increase accident risk.",
+        "Poor Visibility": "Poor visibility limits human perception, interacting with vehicle lighting and road markings in systems theory to compromise safety margins.",
+        "Reckless Driving": "Reckless driving combines aggressive human behavior with vehicle capabilities and environmental factors in systems theory, leading to high-risk interactions.",
+        "Human Error": "Human error in judgment or action interacts with vehicle systems and environmental conditions in systems theory, creating accident scenarios.",
+        "Mechanical Failure": "Mechanical failure in vehicle systems interacts with human response capabilities and road conditions, creating unexpected hazards in systems theory."
+    }
+
+    return cause_summaries.get(cause, f"{cause} contributes to accidents through complex interactions in systems theory involving human, vehicle, and environmental factors.")
 
 
 def validate_with_historical(location: str, severity: str) -> str:
@@ -913,7 +913,7 @@ Vehicles Involved:
     
     recommendations = generate_recommendations(cause, road_condition, lighting, accident_type)
     recommendations_text = "\n".join(f"- {rec}" for rec in recommendations)
-    system_summary = generate_systemic_summary(cause, driver_profile, environment, intervention_plan)
+    system_summary = generate_systemic_summary(cause, driver_profile, environment, intervention_plan, vehicle1, vehicle2, pedestrian, initial_v1, initial_v2)
     validation_line = validation_text or "Historical validation unavailable."
 
     baseline_severity = comparison['baseline']['severity'] if comparison else severity
