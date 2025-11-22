@@ -8,6 +8,6 @@ def extract_text_from_pdf(pdf_path):
             text += page.extract_text()
         return text
 
-pdf_path = r"c:\Users\Ramil\Downloads\QM\docs\Simulation_RoadAccident_InLabo (1).pdf"
+pdf_path = r"c:\Users\Ramil\Downloads\QM\docs\DEVELOPMENT OF A ROAD ACCIDENT SIMULATION FOR AUTOMATIC ROAD ACCIDENT REPORT SYSTEM.pdf"
 text = extract_text_from_pdf(pdf_path)
 print(text)
