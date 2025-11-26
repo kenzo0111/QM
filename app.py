@@ -23,6 +23,9 @@ weather_options = ["Sunny", "Rainy", "Foggy", "Cloudy"]
 weather = st.sidebar.selectbox("Weather", weather_options)
 accident_type = st.sidebar.selectbox("Accident Type", list(accident_types.keys()))
 location = st.sidebar.selectbox("Location", ["Bayabas", "Main Highway", "Barangay 1", "Barangay 2", "Barangay 3", "Barangay 4", "Barangay 5"])
+moving_vehicles = st.sidebar.checkbox("Animate moving vehicles on map", value=True)
+vehicle_roads_limit = st.sidebar.slider("Max roads animated", 1, 100, 50)
+vehicles_per_road = st.sidebar.slider("Vehicles per animated road", 1, 3, 1)
 
 if st.button("Simulate Crash"):
     # Sample parameters based on inputs
@@ -101,7 +104,7 @@ if st.button("Simulate Crash"):
                      baseline_vehicle2.name if baseline_vehicle2 else "Vehicle 2",
                      baseline_pedestrian.name if baseline_pedestrian else "Pedestrian"],
             timestamp=datetime.now()
-        )
+            ,animate_vehicles=moving_vehicles, vehicle_roads_limit=vehicle_roads_limit, vehicles_per_road=vehicles_per_road)
 
         # Display the map in Streamlit
         components.html(map_html, height=600)

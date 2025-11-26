@@ -26,6 +26,60 @@ from constants import accident_types
 from utils import generate_recommendations, generate_systemic_summary, validate_with_historical
 from models import EnvironmentState, DriverProfile, InterventionPlan
 
+def parse_labo_roads_geojson(geojson_path: str = "GIS/labo_roads.geojson"):
+    try:
+        import json
+        with open(geojson_path, 'r', encoding='utf-8') as f:
+            geojson_data = json.load(f)
+
+        roads = []
+        for feature in geojson_data.get('features', []):
+            if feature.get('geometry', {}).get('type') == 'LineString':
+                coordinates = feature['geometry']['coordinates']
+                # Convert [lng, lat] to [lat, lng] for folium
+                road_coords = [[coord[1], coord[0]] for coord in coordinates]
+                roads.append({
+                    'coordinates': road_coords,
+                    'properties': feature.get('properties', {})
+                })
+
+        print(f"Parsed {len(roads)} road segments from GeoJSON")
+        return roads
+    except Exception as e:
+        print(f"Error parsing GeoJSON: {e}")
+        return []
+
+def latlng_to_pixel(lat, lng, bounds, map_width=800, map_height=600):
+    """Convert lat/lng coordinates to pixel positions relative to map bounds."""
+    min_lat, max_lat = bounds['lat']
+    min_lng, max_lng = bounds['lng']
+
+    # Calculate relative position within bounds
+    lat_ratio = (lat - min_lat) / (max_lat - min_lat)
+    lng_ratio = (lng - min_lng) / (max_lng - min_lng)
+
+    # Convert to pixel coordinates (flip Y axis since lat increases upward)
+    x = lng_ratio * map_width
+    y = (1 - lat_ratio) * map_height
+
+    return x, y
+
+def get_map_bounds_from_roads(roads):
+    """Calculate map bounds from road coordinates."""
+    if not roads:
+        return {'lat': [14.08, 14.11], 'lng': [122.58, 122.65]}  # Default Labo bounds
+
+    all_coords = []
+    for road in roads:
+        all_coords.extend(road['coordinates'])
+
+    lats = [coord[0] for coord in all_coords]
+    lngs = [coord[1] for coord in all_coords]
+
+    return {
+        'lat': [min(lats), max(lats)],
+        'lng': [min(lngs), max(lngs)]
+    }
 
 def print_simulation_steps(accident_type: str, cause: str, location: str, road_condition: str, lighting_condition: str, vehicle1: Optional[Any], vehicle2: Optional[Any], pedestrian: Optional[Any], weather: Optional[str], driver_profile: Optional[DriverProfile], environment: Optional[EnvironmentState], interventions: Optional[InterventionPlan]):
     """Print step-by-step breakdown of the road accident simulation process"""
@@ -41,6 +95,88 @@ def print_simulation_steps(accident_type: str, cause: str, location: str, road_c
     print(f"   - Lighting Conditions: {lighting_condition}")
     if weather:
         print(f"   - Weather: {weather}")
+    if environment:
+        print(f"   - Road Geometry: {environment.curvature}, Approx. Slope: {environment.slope:.1f}°")
+    if driver_profile:
+        print(f"   - Driver State: {driver_profile.factor} ({driver_profile.notes})")
+    
+    print(f"\nStep 2: Vehicle/Pedestrian Initialization")
+    if vehicle1:
+        speed_kmh = np.linalg.norm(vehicle1.velocity) * 3.6
+        print(f"   - Vehicle 1: {vehicle1.name} (Mass: {vehicle1.mass} kg, Initial Speed: {speed_kmh:.1f} km/h)")
+    if vehicle2:
+        speed_kmh = np.linalg.norm(vehicle2.velocity) * 3.6
+        print(f"   - Vehicle 2: {vehicle2.name} (Mass: {vehicle2.mass} kg, Initial Speed: {speed_kmh:.1f} km/h)")
+    if pedestrian:
+        print(f"   - Pedestrian: {pedestrian.name} (Mass: {pedestrian.mass} kg, Position: {pedestrian.position:.1f} m)")
+    
+    print(f"\nStep 3: Environmental Factors Applied")
+    friction_map = {"dry": 0.8, "wet": 0.5, "slippery": 0.1}
+    reaction_map = {"good": 0.5, "poor": 1.5}
+    friction_coeff = friction_map.get(road_condition, 0.8)
+    reaction_time = reaction_map.get(lighting_condition, 0.5)
+    if environment:
+        friction_coeff = environment.get_effective_friction(driver_profile)
+        reaction_time = environment.get_effective_reaction(driver_profile)
+    print(f"   - Friction Coefficient: {friction_coeff} (based on {road_condition} road)")
+    print(f"   - Driver Reaction Time: {reaction_time}s (based on {lighting_condition} lighting)")
+    
+    if accident_type == "rear-end":
+        print(f"   - Braking Applied: Vehicle 1 applies brakes after {reaction_time}s reaction time")
+    
+    print(f"\nStep 4: Physics Simulation Begins")
+    print(f"   - Time Step: 0.01 seconds")
+    print(f"   - Total Simulation Time: 10.0 seconds")
+    print(f"   - Collision Detection Distance: 5.0 meters")
+    
+    print(f"\nStep 5: Motion Calculation")
+    print(f"   - Position updates using kinematic equations:")
+    print(f"     position = position + velocity * time + 0.5 * acceleration * time^2")
+    print(f"     velocity = velocity + acceleration * time")
+    
+    if accident_type == "rear-end":
+        deceleration = friction_coeff * 9.81
+        print(f"   - Braking Deceleration: {deceleration:.1f} m/s² (friction * gravity)")
+    
+    print(f"\nStep 6: Collision Detection")
+    if accident_type == "rear-end":
+        print(f"   - Checking if Vehicle 1 overtakes Vehicle 2 within collision distance")
+    elif accident_type == "head-on":
+        print(f"   - Checking if vehicles meet within collision distance")
+    elif accident_type == "side-impact":
+        print(f"   - Checking perpendicular collision proximity")
+    elif accident_type == "pedestrian":
+        print(f"   - Checking if vehicle reaches pedestrian position")
+    
+    print(f"\nStep 7: Impact Analysis (if collision occurs)")
+    print(f"   - Momentum Conservation: m1*v1 + m2*v2 = (m1+m2)*v_final")
+    print(f"   - Impact Force Calculation: F = m * delta_v / delta_t")
+    print(f"   - Severity Classification:")
+    print(f"     • Minor: Impact Force < 50,000 N")
+    print(f"     • Moderate: 50,000 N <= Impact Force < 150,000 N")
+    print(f"     • Severe: Impact Force >= 150,000 N")
+    
+    print(f"\nStep 8: Data Recording")
+    print(f"   - Position and velocity data collected every 0.01 seconds")
+    print(f"   - Simulation data stored in pandas DataFrame")
+    
+    print(f"\nStep 9: Report Generation")
+    print(f"   - Accident analysis and recommendations generated")
+    print(f"   - Excel report created with formatted data")
+    
+    print(f"\nStep 10: Visualization")
+    print(f"   - Position vs time plots generated for analysis")
+    if interventions and interventions.interventions:
+        print(f"\nStep 11: Intervention Modeling")
+        from constants import intervention_effects
+        for item in interventions.interventions:
+            desc = intervention_effects.get(item, {}).get('description', 'Applied based on field recommendations')
+            print(f"   - {item.replace('_', ' ').title()}: {desc}")
+    
+    print("\n" + "="*80)
+    print("SIMULATION EXECUTION BEGINS")
+    print("="*80 + "\n")
+
     if environment:
         print(f"   - Road Geometry: {environment.curvature}, Approx. Slope: {environment.slope:.1f}°")
     if driver_profile:
@@ -397,7 +533,10 @@ def create_map_visualization(
     accident_type: str,
     severity: str,
     entities: List[str],
-    timestamp: datetime
+    timestamp: datetime,
+    animate_vehicles: bool = True,
+    vehicle_roads_limit: int = 50,
+    vehicles_per_road: int = 1
 ) -> str:
     """
     Creates a map visualization showing the accident location and relevant information.
@@ -511,16 +650,66 @@ def create_map_visualization(
             if not roads_gdf.empty:
                 roads_geojson_data = json.loads(roads_gdf.to_json())
 
+                from folium import plugins
+
                 def road_style(_):
                     return {"color": "#ff7f0e", "weight": 3, "opacity": 0.85}
 
+                # Add the static GeoJson layer (for selection and base style)
                 folium.GeoJson(
                     roads_geojson_data,
                     name="Labo Road Network",
                     style_function=road_style
                 ).add_to(m)
+
+                # Also add animated moving traffic using folium.plugins.AntPath for each LineString
+                traf_fg = folium.FeatureGroup(name="Moving Traffic Flow")
+                for feature in roads_geojson_data.get('features', []):
+                    geom = feature.get('geometry', {})
+                    props = feature.get('properties', {})
+                    if geom.get('type') == 'LineString':
+                        # coordinates are [lng, lat]; AntPath expects list of [lat, lng]
+                        coords = [[c[1], c[0]] for c in geom.get('coordinates', [])]
+                        if len(coords) >= 2:
+                            # Create AntPath with color gradient to indicate movement
+                            ant = plugins.AntPath(
+                                locations=coords,
+                                color='#b21f2d',
+                                pulse_color='#fffd75',
+                                weight=4,
+                                delay=2000,
+                                opacity=0.9
+                            )
+                            traf_fg.add_child(ant)
+
+                m.add_child(traf_fg)
                 folium.LayerControl().add_to(m)
                 print("Added Labo road network overlay")
+                # Add TimestampedGeoJson vehicle markers to follow road geometry
+                try:
+                    from folium.plugins import TimestampedGeoJson
+                    # Use a subset of roads to generate vehicles to keep HTML size reasonable
+                    if animate_vehicles:
+                        parsed_roads = parse_labo_roads_geojson()
+                        # Limit number of roads to animate to the configured number for performance
+                        vehicle_geojson = _generate_timestamped_vehicle_geojson(parsed_roads[:vehicle_roads_limit], vehicles_per_road=vehicles_per_road)
+                        feature_count = len(vehicle_geojson.get('features', [])) if vehicle_geojson else 0
+                        print(f"Timestamped vehicle features generated: {feature_count}")
+                        if vehicle_geojson and vehicle_geojson.get('features'):
+                            TimestampedGeoJson(
+                            vehicle_geojson,
+                            period='PT1S',
+                            add_last_point=True,
+                            auto_play=True,
+                            loop=True,
+                            max_speed=1,
+                            loop_button=True,
+                            date_options='YYYY/MM/DD HH:mm:ss',
+                            time_slider_drag_update=True
+                            ).add_to(m)
+                            print("Added timestamped vehicle layer to map")
+                except Exception as e:
+                    print(f"Could not add timestamped vehicle markers: {e}")
         except Exception as e:
             print(f"Could not load Labo roads: {e}")
 
@@ -567,101 +756,10 @@ def create_map_visualization(
     except Exception as e:
         print(f"Could not load historical accident data: {e}")
 
-    # Add moving traffic animation
-    traffic_css = """
-    <style>
-    .traffic-flow {
-        position: absolute;
-        width: 100%;
-        height: 4px;
-        background: linear-gradient(90deg, transparent 0%, rgba(0, 255, 0, 0.6) 20%, rgba(255, 255, 0, 0.8) 50%, rgba(255, 165, 0, 0.7) 80%, transparent 100%);
-        animation: traffic-flow 8s linear infinite;
-        pointer-events: none;
-        z-index: 1000;
-    }
-
-    .traffic-vehicle {
-        position: absolute;
-        width: 8px;
-        height: 8px;
-        background: #ff4444;
-        border-radius: 50%;
-        animation: vehicle-move 12s linear infinite;
-        box-shadow: 0 0 4px rgba(255, 68, 68, 0.8);
-        z-index: 1001;
-    }
-
-    .traffic-vehicle:nth-child(2) {
-        animation-delay: -4s;
-        background: #4444ff;
-        box-shadow: 0 0 4px rgba(68, 68, 255, 0.8);
-    }
-
-    .traffic-vehicle:nth-child(3) {
-        animation-delay: -8s;
-        background: #44ff44;
-        box-shadow: 0 0 4px rgba(68, 255, 68, 0.8);
-    }
-
-    @keyframes traffic-flow {
-        0% { transform: translateX(-100%); }
-        100% { transform: translateX(100%); }
-    }
-
-    @keyframes vehicle-move {
-        0% {
-            transform: translateX(-20px) scale(0.8);
-            opacity: 0;
-        }
-        10% {
-            opacity: 1;
-            transform: translateX(0) scale(1);
-        }
-        90% {
-            opacity: 1;
-            transform: translateX(calc(100vw - 20px)) scale(1);
-        }
-        100% {
-            transform: translateX(calc(100vw - 20px)) scale(0.8);
-            opacity: 0;
-        }
-    }
-
-    .traffic-overlay {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        pointer-events: none;
-        z-index: 999;
-    }
-    </style>
-    """
-    m.get_root().header.add_child(folium.Element(traffic_css))
-
-    # Add simple traffic overlay without complex JavaScript
-    traffic_overlay_html = """
-    <div class="traffic-overlay">
-        <!-- Traffic flow indicators on major roads -->
-        <div class="traffic-flow" style="top: 45%; left: 0; transform: rotate(0deg);"></div>
-        <div class="traffic-flow" style="top: 55%; left: 0; transform: rotate(0deg); animation-delay: -2s;"></div>
-        <div class="traffic-flow" style="top: 25%; left: 0; transform: rotate(15deg); animation-delay: -1s;"></div>
-        <div class="traffic-flow" style="top: 75%; left: 0; transform: rotate(-15deg); animation-delay: -3s;"></div>
-
-        <!-- Moving vehicle markers -->
-        <div class="traffic-vehicle" style="top: 48%; animation-duration: 10s;"></div>
-        <div class="traffic-vehicle" style="top: 52%; animation-duration: 15s;"></div>
-        <div class="traffic-vehicle" style="top: 28%; animation-duration: 12s;"></div>
-        <div class="traffic-vehicle" style="top: 72%; animation-duration: 18s;"></div>
-        <div class="traffic-vehicle" style="top: 35%; animation-duration: 14s;"></div>
-    </div>
-    """
-
-    # Add traffic overlay to map
-    m.get_root().html.add_child(folium.Element(traffic_overlay_html))
-
-    print("Added moving traffic animation to map")
+    # Add moving traffic annotations
+    roads = parse_labo_roads_geojson()
+    # We added AntPath animated polylines above (via folium.plugins.AntPath) tied to the road coordinates.
+    print("Added animated AntPath moving traffic overlays tied to the Labo road GeoJSON.")
 
     # Add legend
     from branca.element import MacroElement
@@ -734,6 +832,129 @@ def create_map_visualization(
 
     print("Map visualization generated successfully for Streamlit integration.")
     return html_string
+    
+def _haversine_meters(lat1, lon1, lat2, lon2):
+    """Return distance between two lat/lon points in meters (haversine)."""
+    from math import radians, sin, cos, asin, sqrt
+    R = 6371000  # Earth radius in meters
+    phi1, phi2 = radians(lat1), radians(lat2)
+    dphi = radians(lat2 - lat1)
+    dlambda = radians(lon2 - lon1)
+    a = sin(dphi/2)**2 + cos(phi1) * cos(phi2) * sin(dlambda/2)**2
+    c = 2 * asin(min(1, sqrt(a)))
+    return R * c
+
+
+def _generate_timestamped_vehicle_geojson(roads, start_time=None, vehicles_per_road=1):
+    """
+    Generate a GeoJSON FeatureCollection for TimestampedGeoJson plugin where each feature
+    represents a vehicle moving along a LineString path with matching 'times' array.
+    `roads` should be a list of roads as returned by `parse_labo_roads_geojson` (lat, lng points).
+    """
+    import copy
+    from datetime import datetime, timedelta
+    if start_time is None:
+        # Use UTC now as the animation baseline
+        start_time = datetime.utcnow()
+
+    features = []
+
+    for road_idx, road in enumerate(roads):
+        coords_latlng = road.get('coordinates', [])
+        if len(coords_latlng) < 2:
+            continue
+
+        # We'll place a number of vehicles per road; compute once
+        for v_idx in range(vehicles_per_road):
+            # Choose a vehicle speed (m/s) - vary per vehicle
+            # realistic range: cars 8-16 m/s (~30-60 km/h), bikes slower
+            speed_mps = random.uniform(8.0, 16.0)
+
+            # Choose a start offset on the road [0..1]
+            start_offset = random.uniform(0, 0.5)
+
+            # Build the path coordinates as GeoJSON ([lon, lat]) and compute distances
+            geojson_coords = []
+            distances = []  # meters between consecutive points
+            for i, (lat, lon) in enumerate(coords_latlng):
+                geojson_coords.append([lon, lat])
+                if i > 0:
+                    prev_lat, prev_lon = coords_latlng[i-1]
+                    d = _haversine_meters(prev_lat, prev_lon, lat, lon)
+                    distances.append(d)
+
+            total_length = sum(distances) if distances else 0.0
+            if total_length <= 0:
+                continue
+
+            # compute cumulative distances along points
+            cum_dists = [0.0]
+            running = 0.0
+            for d in distances:
+                running += d
+                cum_dists.append(running)
+
+            # Determine time for each point as cumulative distance / speed
+            times = []
+            base_time = start_time + timedelta(seconds=random.uniform(0, 10))
+            for dist in cum_dists:
+                t = base_time + timedelta(seconds=(dist / speed_mps))
+                times.append(t.isoformat() + 'Z')
+
+            # If we want vehicles to start mid-segment, we can rotate the coords/times arrays
+            # to apply start_offset (fraction of total length)
+            offset_m = start_offset * total_length
+            # find index to rotate
+            rot_idx = 0
+            for i, d in enumerate(cum_dists):
+                if d >= offset_m:
+                    rot_idx = i
+                    break
+
+            # rotate so vehicle starts from rot_idx and append earlier coords with times increased
+            if rot_idx > 0:
+                # compose new coords and times starting from rot_idx to end, then beginning to rot_idx
+                path_coords = geojson_coords[rot_idx:] + geojson_coords[:rot_idx+1]
+                path_times = times[rot_idx:] + [ (datetime.fromisoformat(times[0].replace('Z','')) + (datetime.fromisoformat(times[-1].replace('Z','')) - datetime.fromisoformat(times[0].replace('Z','')))).isoformat() + 'Z' ]
+                # The above adjustment ensures times array length aligns but may not be perfect.
+            else:
+                path_coords = geojson_coords
+                path_times = times
+
+            # Keep times length equal to coordinates length
+            if len(path_times) != len(path_coords):
+                # If mismatch, truncate or expand as needed (simple alignment)
+                minlen = min(len(path_times), len(path_coords))
+                path_coords = path_coords[:minlen]
+                path_times = path_times[:minlen]
+
+            # assign a color per vehicle type (round-robin)
+            colors = ['#ff4444', '#4444ff', '#44ff44']
+            color = colors[(road_idx + v_idx) % len(colors)]
+
+            feature = {
+                'type': 'Feature',
+                'geometry': {'type': 'LineString', 'coordinates': path_coords},
+                'properties': {
+                    'times': path_times,
+                    'popup': f'Vehicle {road_idx}-{v_idx}',
+                    'style': {'color': color, 'weight': 4},
+                    'icon': 'circle',
+                    'iconstyle': {
+                        'fillColor': color,
+                        'fillOpacity': 0.9,
+                        'stroke': True,
+                        'radius': 6
+                    }
+                }
+            }
+
+            features.append(feature)
+
+    return {
+        'type': 'FeatureCollection',
+        'features': features
+    }
 def generate_pdf_report(report_text: str, filename: str = "accident_report.pdf"):
     """Generate a PDF report from the text report."""
     try:
