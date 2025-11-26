@@ -1,0 +1,214 @@
+.accident-marker {
+    position: relative;
+    width: 34px;
+    height: 34px;
+}
+.accident-marker-core {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 18px;
+    height: 18px;
+    transform: translate(-50%, -50%);
+    background: #d9534f;
+    border-radius: 50%;
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 10px rgba(217, 83, 79, 0.7);
+    animation: accident-core-pulse 1.6s infinite;
+}
+.accident-marker-core i {
+    font-size: 12px;
+}
+.accident-marker-wave {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 34px;
+    height: 34px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    border: 2px solid rgba(217, 83, 79, 0.7);
+    opacity: 0;
+    animation: accident-wave 2.4s infinite;
+}
+.accident-marker-wave.wave-delay {
+    animation-delay: 1.2s;
+}
+@keyframes accident-wave {
+    0% {
+        opacity: 0.7;
+        transform: translate(-50%, -50%) scale(0.3);
+    }
+    60% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(1.6);
+    }
+    100% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(1.6);
+    }
+}
+@keyframes accident-core-pulse {
+    0%, 100% {
+        transform: translate(-50%, -50%) scale(1);
+        box-shadow: 0 0 10px rgba(217, 83, 79, 0.7);
+    }
+    50% {
+        transform: translate(-50%, -50%) scale(1.15);
+        box-shadow: 0 0 18px rgba(217, 83, 79, 0.9);
+    }
+}
+
+.leaflet-marker-icon.vehicle1-marker,
+.leaflet-marker-icon.vehicle2-marker {
+    transition: transform 0.25s linear;
+}
+.vehicle-marker {
+    position: relative;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.vehicle-marker-primary .vehicle-body {
+    background: #d9534f;
+    box-shadow: none;
+}
+.vehicle-marker-secondary .vehicle-body {
+    background: #5cb85c;
+    box-shadow: none;
+}
+.vehicle-marker .vehicle-body {
+    position: relative;
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid rgba(255, 255, 255, 0.9);
+}
+.vehicle-marker .vehicle-body i {
+    font-size: 13px;
+}
+.vehicle-speedline {
+    position: absolute;
+    left: 4px;
+    width: 10px;
+    height: 2px;
+    background: rgba(255, 255, 255, 0.35);
+    border-radius: 1px;
+    opacity: 0;
+    animation: vehicle-trail 0.6s linear infinite;
+}
+.vehicle-marker .vehicle-speedline:nth-of-type(1) { top: 11px; animation-delay: 0.1s; }
+.vehicle-marker .vehicle-speedline:nth-of-type(2) { top: 18px; animation-delay: 0.3s; }
+.vehicle-marker.impact-pulse {
+    animation: vehicle-impact-pulse 0.6s ease-in-out 1;
+}
+@keyframes vehicle-impact-pulse {
+    0%, 100% {
+        transform: scale(1);
+        box-shadow: 0 0 10px rgba(255, 255, 255, 0.0);
+    }
+    40% {
+        transform: scale(1.18);
+        box-shadow: 0 0 16px rgba(255, 255, 255, 0.45);
+    }
+    70% {
+        transform: scale(0.93);
+        box-shadow: 0 0 6px rgba(255, 255, 255, 0.25);
+    }
+}
+@keyframes vehicle-trail {
+    0% { transform: translateX(0); opacity: 0; }
+    30% { opacity: 0.85; }
+    100% { transform: translateX(-6px); opacity: 0; }
+}
+.collision-effect-icon {
+    pointer-events: none;
+}
+.collision-burst {
+    position: relative;
+    width: 48px;
+    height: 48px;
+}
+.collision-core {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 18px;
+    height: 18px;
+    transform: translate(-50%, -50%);
+    background: radial-gradient(circle, #ffedb5 0%, #f0ad4e 55%, #d9534f 100%);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #8a1f1f;
+    box-shadow: 0 0 14px rgba(217, 83, 79, 0.8);
+    animation: collision-core-flash 0.9s ease-out 1;
+}
+.collision-ring {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 2px solid rgba(217, 83, 79, 0.65);
+    transform: translate(-50%, -50%) scale(0.2);
+    opacity: 0;
+    animation: collision-ring-expand 1.6s ease-out infinite;
+}
+.collision-ring.ring-delay {
+    animation-delay: 0.5s;
+}
+@keyframes collision-ring-expand {
+    0% {
+        transform: translate(-50%, -50%) scale(0.2);
+        opacity: 0.75;
+    }
+    70% {
+        transform: translate(-50%, -50%) scale(1.8);
+        opacity: 0;
+    }
+    100% {
+        transform: translate(-50%, -50%) scale(1.8);
+        opacity: 0;
+    }
+}
+@keyframes collision-core-flash {
+    0% { transform: translate(-50%, -50%) scale(0.6); opacity: 0.0; }
+    30% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; }
+    100% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+}
+
+#map_38d919f04989b5ecab4eeedcdb591817 {
+    position: relative;
+    width: 100.0%;
+    height: 100.0%;
+    left: 0.0%;
+    top: 0.0%;
+}
+.leaflet-container { font-size: 1rem; }
+
+html, body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+#map {
+    position:absolute;
+    top:0;
+    bottom:0;
+    right:0;
+    left:0;
+}

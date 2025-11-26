@@ -1240,7 +1240,11 @@ def create_map_visualization(
                 deck_data_json = json.dumps(deck_data)
                 deck_script = f"""
                 <script>
-                (function() {{
+                (function waitForMap() {{
+                    if (typeof {m.get_name()} === 'undefined') {{
+                        setTimeout(waitForMap, 50);
+                        return;
+                    }}
                     const map = {m.get_name()};
                     const deckData = {deck_data_json};
                     const deckScriptUrl = 'https://unpkg.com/deck.gl@8.9.36/dist.min.js';
@@ -1294,6 +1298,7 @@ def create_map_visualization(
 
                             deckLayer.addTo(map);
                             map.__deckRoadLayer = deckLayer;
+                            console && console.log && console.log('deck.gl road overlay initialised');
                         }})
                         .catch(function(err) {{
                             console.error('Failed to initialise deck.gl roads overlay.', err);
@@ -1305,6 +1310,10 @@ def create_map_visualization(
                 print(f"Added deck.gl 3D path overlay with {len(deck_data)} segments")
         except Exception as exc:
             print(f"Unable to build 3D road overlay: {exc}")
+
+    # Add a simple favicon to avoid 404 requests by browsers
+    favicon_link = '<link rel="icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMBApZfo7kAAAAASUVORK5CYII=" />'
+    m.get_root().header.add_child(folium.Element(favicon_link))
 
     # Add accident location marker with animated pulse to draw attention
     accident_marker_css = """
@@ -1752,15 +1761,73 @@ def create_map_visualization(
     vehicle2_marker_js = vehicle2_marker.get_name() if vehicle2_marker else 'null'
     pedestrian_marker_js = pedestrian_marker.get_name() if pedestrian_marker else 'null'
 
-    # Add custom JavaScript for animation
+    # Make safe JS expressions for dynamic variables that might not be defined when the script runs
+    def _safe_marker_expr(marker_js_name: str) -> str:
+        # marker_js_name is either 'null' or 'marker_XXXXX'. Return a JS expression that resolves to the marker or null if undefined
+        if marker_js_name == 'null':
+            return 'null'
+        return f'typeof {marker_js_name} !== "undefined" ? {marker_js_name} : null'
+
+    vehicle1_marker_js_expr = _safe_marker_expr(vehicle1_marker_js)
+    vehicle2_marker_js_expr = _safe_marker_expr(vehicle2_marker_js)
+    pedestrian_marker_js_expr = _safe_marker_expr(pedestrian_marker_js)
+
+    # Debug: write sanitized JSON to a cache file for quick inspection when needed.
+    try:
+        # only write debug files when running interactively
+        if os.environ.get('QM_DEV') == '1':
+            debug_dir = os.path.join(os.getcwd(), 'cache')
+            os.makedirs(debug_dir, exist_ok=True)
+            with open(os.path.join(debug_dir, 'animation_debug_vehicle1.json'), 'w', encoding='utf-8') as fh:
+                fh.write(vehicle1_positions_js)
+            with open(os.path.join(debug_dir, 'animation_debug_vehicle2.json'), 'w', encoding='utf-8') as fh:
+                fh.write(vehicle2_positions_js)
+            with open(os.path.join(debug_dir, 'animation_debug_times.json'), 'w', encoding='utf-8') as fh:
+                fh.write(time_points_js)
+    except Exception:
+        pass
+
+    # Convert Python lists (which may contain None and numpy floats) into JSON-valid strings
+    # This also centralizes handling of coordinates and arrays so other features can reuse the helper
+    def _to_js_coord_list(coord_list):
+        result = []
+        for c in coord_list:
+            if c is None:
+                result.append(None)
+            else:
+                # c is [lat, lon]
+                result.append([float(c[0]), float(c[1])])
+        return result
+
+    def to_js_json(obj):
+        """Safely convert Python data into a JSON literal for embedding into JavaScript.
+        - Converts numpy types to native Python floats
+        - Ensures None becomes null via json.dumps
+        """
+        # lists of coords need conversion
+        if isinstance(obj, list) and obj and isinstance(obj[0], (list, tuple)):
+            return json.dumps(_to_js_coord_list(obj))
+        if isinstance(obj, list):
+            # scalar list
+            return json.dumps([float(x) if x is not None else None for x in obj])
+        # default fallback
+        return json.dumps(obj)
+
+    vehicle1_positions_js = to_js_json(vehicle1_positions)
+    vehicle2_positions_js = to_js_json(vehicle2_positions)
+    pedestrian_positions_js = to_js_json(pedestrian_positions)
+    time_points_js = to_js_json([float(t) for t in time_points])
+    collision_frame_index_js = 'null' if collision_frame_index is None else collision_frame_index
+
+    # Add custom JavaScript for animation (wrap in DOMContentLoaded + debug logging)
     animation_js = f"""
     <script>
     // Animation data
-    var vehicle1Positions = {vehicle1_positions};
-    var vehicle2Positions = {vehicle2_positions};
-    var pedestrianPositions = {pedestrian_positions};
-    var timePoints = {time_points};
-    var collisionFrameIndex = {'null' if collision_frame_index is None else collision_frame_index};
+    var vehicle1Positions = {vehicle1_positions_js};
+    var vehicle2Positions = {vehicle2_positions_js};
+    var pedestrianPositions = {pedestrian_positions_js};
+    var timePoints = {time_points_js};
+    var collisionFrameIndex = {collision_frame_index_js};
     var collisionTriggered = false;
     var currentFrame = 0;
     var isPlaying = false;
@@ -1768,11 +1835,14 @@ def create_map_visualization(
     var animationInterval;
 
     // Get marker objects from Folium
-    var vehicle1Marker = {vehicle1_marker_js};
-    var vehicle2Marker = {vehicle2_marker_js};
-    var pedestrianMarker = {pedestrian_marker_js};
+    var vehicle1Marker = {vehicle1_marker_js_expr};
+    var vehicle2Marker = {vehicle2_marker_js_expr};
+    var pedestrianMarker = {pedestrian_marker_js_expr};
     var animationMap = null;
     var collisionMarker = null;
+
+    // Debug logging to console - helps verify map and markers post-generation
+    console && console.log && console.log('Animation debug: vehicle1Marker available?', vehicle1Marker !== null, 'vehicle2Marker available?', vehicle2Marker !== null, 'pedestrianMarker available?', pedestrianMarker !== null);
 
     function resolveAnimationMap() {{
         if (vehicle1Marker && vehicle1Marker._map) {{
@@ -1800,7 +1870,11 @@ def create_map_visualization(
         updateAnimationFrame();
     }}
 
-    setTimeout(initializeAnimation, 500);
+    // Wait for DOM to be ready, then start initialization after a small delay and also ensure map and markers exist
+    document.addEventListener('DOMContentLoaded', function() {{
+        // give a small delay to ensure Folium's map and markers are created
+        setTimeout(initializeAnimation, 500);
+    }});
 
     function updateAnimationFrame() {{
         if (currentFrame >= vehicle1Positions.length) {{
