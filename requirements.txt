@@ -1,0 +1,24 @@
+# Core dependencies
+numpy
+pandas
+matplotlib
+scipy
+
+# GIS and mapping
+geopandas
+osmnx
+folium
+shapely
+
+# Machine Learning
+scikit-learn
+joblib
+
+# PDF generation
+reportlab
+
+# Web dashboard
+streamlit
+
+# Excel handling
+openpyxl
