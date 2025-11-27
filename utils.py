@@ -4,6 +4,7 @@
 import random
 import pandas as pd
 from typing import Optional, Tuple, Dict, Any
+import zlib
 
 from constants import location_profiles, vehicle_types, accident_types
 from models import EnvironmentState, InterventionPlan, DriverProfile
@@ -121,13 +122,14 @@ def determine_angle(accident_type: str) -> int:
     return angle_map.get(accident_type, 0)
 
 
-def prepare_accident_entities(accident_type: str, primary_vehicle_type: str) -> Tuple[Optional[Dict], Optional[Dict], Optional[Dict], int]:
+def prepare_accident_entities(accident_type: str, primary_vehicle_type: str, rng: Optional[random.Random] = None) -> Tuple[Optional[Dict], Optional[Dict], Optional[Dict], int]:
     """Create baseline entity specifications for repeatable simulation/what-if runs."""
 
     def vehicle_spec(position: float, name_suffix: str, velocity: Optional[float] = None) -> Dict:
+        r = rng or random
         veh_type = primary_vehicle_type
-        mass = random.randint(*vehicle_types[veh_type]["mass_range"])
-        speed = velocity if velocity is not None else random.uniform(15, 35)
+        mass = r.randint(*vehicle_types[veh_type]["mass_range"])
+        speed = velocity if velocity is not None else r.uniform(15, 35)
         return {"mass": mass, "velocity": speed, "position": position, "name": f"{veh_type} {name_suffix}"}
 
     vehicle1 = vehicle_spec(0, "1")
@@ -137,19 +139,34 @@ def prepare_accident_entities(accident_type: str, primary_vehicle_type: str) -> 
     if accident_type == "rear-end":
         vehicle2 = vehicle_spec(50, "2")
         if vehicle1["velocity"] <= vehicle2["velocity"]:
-            vehicle1["velocity"] = vehicle2["velocity"] + random.uniform(5, 10)
+            vehicle1["velocity"] = vehicle2["velocity"] + (rng or random).uniform(5, 10)
     elif accident_type == "head-on":
-        vehicle1["velocity"] = random.uniform(15, 25)
-        vehicle2 = vehicle_spec(100, "2", velocity=-random.uniform(15, 25))
+        vehicle1["velocity"] = (rng or random).uniform(15, 25)
+        vehicle2 = vehicle_spec(100, "2", velocity=-(rng or random).uniform(15, 25))
     elif accident_type == "side-impact":
-        vehicle1["velocity"] = random.uniform(15, 25)
+        vehicle1["velocity"] = (rng or random).uniform(15, 25)
         vehicle2 = vehicle_spec(50, "2", velocity=0)
     elif accident_type == "pedestrian":
         vehicle1["velocity"] = random.uniform(15, 35)
-        pedestrian = {"mass": random.randint(50, 90), "position": random.uniform(40, 60), "name": "Pedestrian"}
+        pedestrian = {"mass": (rng or random).randint(50, 90), "position": (rng or random).uniform(40, 60), "name": "Pedestrian"}
 
     angle = determine_angle(accident_type)
     return vehicle1, vehicle2, pedestrian, angle
+
+
+def rng_for_location(location: Optional[str]) -> random.Random:
+    """Return a deterministic Random seeded by a stable hash of the location name.
+
+    This enables consistent randomness tied to a barangay name while keeping the
+    global random state untouched.
+    """
+    seed = 0
+    if location:
+        try:
+            seed = zlib.crc32(str(location).encode('utf-8'))
+        except Exception:
+            seed = abs(hash(location)) % (2**32)
+    return random.Random(seed)
 
 
 def instantiate_entities(vehicle1_spec: Optional[Dict], vehicle2_spec: Optional[Dict], pedestrian_spec: Optional[Dict]) -> Tuple[Optional[Any], Optional[Any], Optional[Any]]:
@@ -187,7 +204,7 @@ def generate_recommendations(cause: str, road_condition: str, lighting_condition
     return recs
 
 
-def sample_from_data_sources() -> Tuple[str, str, str, str, str, str, str]:
+def sample_from_data_sources(location: Optional[str] = None, seed_from_location: bool = False) -> Tuple[str, str, str, str, str, str, str]:
     """Sample accident parameters from historical data sources"""
     try:
         accident_data = pd.read_csv('accident_data.csv')
@@ -201,7 +218,20 @@ def sample_from_data_sources() -> Tuple[str, str, str, str, str, str, str]:
             ['Drunk Driving', '2023-05-12 01:20', 'Main Highway', 'Car', 'Rainy', 'Night', 'Wet road', 'Under influence', 'Severe']
         ], columns=['cause', 'time', 'location', 'vehicle_type', 'weather', 'lighting', 'road_characteristics', 'human_factors', 'severity'])
 
-    row = accident_data.sample().iloc[0]
+    # Optionally filter data by location
+    if location is not None and 'location' in accident_data.columns:
+        filtered = accident_data[accident_data['location'].astype(str).str.lower() == str(location).lower()]
+        if not filtered.empty:
+            if seed_from_location:
+                seed = zlib.crc32(str(location).encode('utf-8'))
+                row = filtered.sample(random_state=seed).iloc[0]
+            else:
+                row = filtered.sample().iloc[0]
+        else:
+            # fallback to sampling from all data
+            row = accident_data.sample().iloc[0]
+    else:
+        row = accident_data.sample().iloc[0]
 
     # Map data to simulation parameters
     cause = row.get('cause', 'Overspeeding')

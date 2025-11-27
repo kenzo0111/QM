@@ -8,7 +8,7 @@ import os
 import json
 import random
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # GIS and mapping libraries
 try:
@@ -22,8 +22,8 @@ try:
 except ImportError as e:
     print(f"Warning: Some GIS/mapping libraries not available: {e}")
 
-from constants import accident_types
-from utils import generate_recommendations, generate_systemic_summary, validate_with_historical
+from constants import accident_types, LABO_COORDINATES, LABO_BARANGAYS
+from utils import generate_recommendations, generate_systemic_summary, validate_with_historical, rng_for_location
 from models import EnvironmentState, DriverProfile, InterventionPlan
 
 def parse_labo_roads_geojson(geojson_path: str = "GIS/labo_roads.geojson"):
@@ -482,9 +482,21 @@ def create_labo_roads_geojson(force_regenerate: bool = False) -> Path | None:
     gis_dir = base_dir / "GIS"
     output_geojson_path = gis_dir / "labo_roads.geojson"
 
+    # If the GeoJSON already exists and regeneration not forced, check if
+    # the barangay names are already assigned. If not, update the file.
     if output_geojson_path.exists() and not force_regenerate:
-        print(f"Found existing {output_geojson_path}. Reusing it for the map overlay.")
-        return output_geojson_path
+        try:
+            roads = gpd.read_file(output_geojson_path)
+            # If 'barangay' column is present we can reuse
+            if 'barangay' in roads.columns and not roads['barangay'].isnull().all():
+                print(f"Found existing {output_geojson_path} with barangay names. Reusing it for the map overlay.")
+                return output_geojson_path
+            else:
+                print(f"Found existing {output_geojson_path} but barangay names are missing; updating file.")
+                # continue on to regenerate/annotate
+        except Exception:
+            # Any issue when reading the existing file will trigger a regeneration
+            print("Existing GeoJSON found but could not be read; regenerating.")
 
     gis_dir.mkdir(parents=True, exist_ok=True)
 
@@ -543,6 +555,12 @@ def create_labo_roads_geojson(force_regenerate: bool = False) -> Path | None:
         print("No road geometries found to export. GeoJSON will not be created.")
         return None
 
+    # Optionally add barangay names to properties
+    try:
+        roads = _assign_barangay_names(roads)
+    except Exception as exc:
+        print(f"Warning: Could not assign barangay names to roads: {exc}")
+
     print(f"Saving Labo road network to {output_geojson_path}...")
     try:
         roads.to_file(output_geojson_path, driver="GeoJSON")
@@ -555,7 +573,8 @@ def create_labo_roads_geojson(force_regenerate: bool = False) -> Path | None:
 
 
 def create_map_visualization(
-    accident_location_or_sim_data: Any,
+    accident_location_or_sim_data: Any = None,
+    accident_location: Any | None = None,
     accident_type: Optional[str] = None,
     severity: Optional[str] = None,
     entities: Optional[List[str]] = None,
@@ -563,18 +582,30 @@ def create_map_visualization(
     animate_vehicles: bool = True,
     vehicle_roads_limit: int = 50,
     vehicles_per_road: int = 1,
+    target_fps: int = 30,
     **kwargs
 ) -> str:
     """
     Creates a map visualization showing the accident location and relevant information.
     Returns HTML content for embedding in Streamlit.
+    
+    Parameters:
+    - target_fps: int - target frames per second for vehicle animation (<= 60). Higher values increase HTML payload and CPU usage.
     """
     print("\nStarting map visualization process...")
 
     # Backwards-compatible wrapper: support two calling styles
     # 1) (accident_location: (lat, lon), accident_type, severity, entities, timestamp, ...)
     # 2) (sim_data, vehicle1_name=..., vehicle2_name=..., pedestrian_name=..., location=<loc name>, labo_geojson_path=..., collision_time=...)
+    # Support both calling styles:
+    # - Positional (accident_location_or_sim_data) may be a sim_data DataFrame or a (lat, lon) tuple
+    # - Keyword `accident_location` may be used by callers that prefer named parameter
     accident_lat, accident_lon = None, None
+
+    # If caller passed `accident_location` as a keyword and no positional first argument,
+    # use that value as the main first param so the rest of the wrapper will work.
+    if accident_location_or_sim_data is None and accident_location is not None:
+        accident_location_or_sim_data = accident_location
     labo_geojson_path = kwargs.get('labo_geojson_path')
     if hasattr(accident_location_or_sim_data, 'columns'):
         # Called with sim_data
@@ -585,16 +616,28 @@ def create_map_visualization(
         pedestrian_name = kwargs.get('pedestrian_name')
         location_name = kwargs.get('location')
         collision_time = kwargs.get('collision_time')
-        # Resolve location name to lat/lon if possible
-        location_coords = {
-            'Bayabas': [14.158, 122.825],
-            'Main Highway': [14.156, 122.83],
-            'Barangay 1': [14.152, 122.835],
-            'Barangay 2': [14.154, 122.828],
-            'Barangay 3': [14.160, 122.832],
-            'Barangay 4': [14.158, 122.838],
-            'Barangay 5': [14.162, 122.826],
-        }
+        # Resolve location name to lat/lon using LABO_COORDINATES and fallback grid
+        location_coords = {}
+        base_lat, base_lon = 14.156, 122.83
+        delta_lat = 0.0022
+        delta_lon = 0.0032
+        # seed with constants mapping
+        if isinstance(LABO_COORDINATES, dict):
+            for k, v in LABO_COORDINATES.items():
+                try:
+                    location_coords[k] = [float(v[0]), float(v[1])]
+                except Exception:
+                    continue
+        # fill the rest of barangays with a deterministic grid placement
+        per_row = 8
+        for i, name in enumerate(LABO_BARANGAYS):
+            if name in location_coords:
+                continue
+            row = i // per_row
+            col = i % per_row
+            lat = base_lat + (row - 3) * delta_lat
+            lon = base_lon + (col - (per_row // 2)) * delta_lon
+            location_coords[name] = [round(lat, 6), round(lon, 6)]
         if location_name and location_name in location_coords:
             accident_lat, accident_lon = location_coords.get(location_name)
         else:
@@ -616,6 +659,8 @@ def create_map_visualization(
             accident_lat, accident_lon = (14.156, 122.83)
         # Entities default
         entities = entities or []
+        # Ensure timestamp default for consistency
+        timestamp = timestamp or datetime.now()
 
     # Create a base map centered on the accident location
     m = folium.Map(location=[accident_lat, accident_lon], zoom_start=15)
@@ -730,10 +775,13 @@ def create_map_visualization(
                     return {"color": "#ff7f0e", "weight": 3, "opacity": 0.85}
 
                 # Add the static GeoJson layer (for selection and base style)
+                from folium.features import GeoJsonTooltip
+                tooltip = GeoJsonTooltip(fields=['barangay'], aliases=['Barangay:'], localize=True)
                 folium.GeoJson(
                     roads_geojson_data,
                     name="Labo Road Network",
-                    style_function=road_style
+                    style_function=road_style,
+                    tooltip=tooltip
                 ).add_to(m)
 
                 # Also add animated moving traffic using folium.plugins.AntPath for each LineString
@@ -765,14 +813,34 @@ def create_map_visualization(
                     # Use a subset of roads to generate vehicles to keep HTML size reasonable
                     if animate_vehicles:
                         parsed_roads = parse_labo_roads_geojson()
+                        # Choose frame rate: cap to reasonable values (<= 60 fps)
+                        fps = int(kwargs.get('target_fps', target_fps) or target_fps)
+                        if fps <= 0:
+                            fps = 1
+                        if fps > 60:
+                            print(f"Requested fps {fps} exceeds 60 -- capping to 60 for browser performance")
+                            fps = 60
                         # Limit number of roads to animate to the configured number for performance
-                        vehicle_geojson = _generate_timestamped_vehicle_geojson(parsed_roads[:vehicle_roads_limit], vehicles_per_road=vehicles_per_road)
+                        # Create a deterministic RNG for the location if available
+                        loc_rng = rng_for_location(location_name) if ('location_name' in locals() and location_name) else None
+                        vehicle_geojson = _generate_timestamped_vehicle_geojson(parsed_roads[:vehicle_roads_limit], vehicles_per_road=vehicles_per_road, fps=fps, rng=loc_rng)
                         feature_count = len(vehicle_geojson.get('features', [])) if vehicle_geojson else 0
                         print(f"Timestamped vehicle features generated: {feature_count}")
-                        if vehicle_geojson and vehicle_geojson.get('features'):
-                            TimestampedGeoJson(
+                        # Warn users about potential performance implications
+                        if fps >= 30 and (vehicle_roads_limit > 20 or vehicles_per_road > 2 or feature_count > 200):
+                            print("Warning: Generating high-frame-rate animations (>=30fps) for many roads/vehicles can produce very large HTML payloads and may degrade browser performance. Consider reducing fps, vehicle_roads_limit, or vehicles_per_road.")
+                        # Choose frame rate: cap to reasonable values (<= 60 fps)
+                        fps = int(kwargs.get('target_fps', target_fps) or target_fps)
+                        if fps <= 0:
+                            fps = 1
+                        if fps > 60:
+                            print(f"Requested fps {fps} exceeds 60 -- capping to 60 for browser performance")
+                            fps = 60
+
+                        TimestampedGeoJson(
                             vehicle_geojson,
-                            period='PT1S',
+                            # Period string describes the time step between frames. Set to fraction of a second per frame.
+                            period=f'PT{1.0/fps:.6f}S',
                             add_last_point=True,
                             auto_play=True,
                             loop=True,
@@ -780,8 +848,8 @@ def create_map_visualization(
                             loop_button=True,
                             date_options='YYYY/MM/DD HH:mm:ss',
                             time_slider_drag_update=True
-                            ).add_to(m)
-                            print("Added timestamped vehicle layer to map")
+                        ).add_to(m)
+                        print("Added timestamped vehicle layer to map")
                 except Exception as e:
                     print(f"Could not add timestamped vehicle markers: {e}")
         except Exception as e:
@@ -919,7 +987,74 @@ def _haversine_meters(lat1, lon1, lat2, lon2):
     return R * c
 
 
-def _generate_timestamped_vehicle_geojson(roads, start_time=None, vehicles_per_road=1):
+def _assign_barangay_names(roads_gdf, barangay_centers: dict | None = None, max_radius_m: float = 3000.0):
+    """Assign a barangay name to each geometry in a GeoDataFrame based on nearest
+    center points. Adds a 'barangay' column to the GeoDataFrame.
+
+    The function uses the centroid of each geometry to find the nearest
+    barangay centre within max_radius_m. If none are within the radius, it
+    assigns 'Unknown'.
+    """
+    if barangay_centers is None:
+        # Build default centers using the LABO_BARANGAYS list. Where available, prefer
+        # coordinates from LABO_COORDINATES; otherwise create a small grid around the
+        # Labo town center (14.156, 122.83) for consistent but approximate positions.
+        base_lat, base_lon = 14.156, 122.83
+        barangay_centers = {}
+        # Use any explicit coords in LABO_COORDINATES
+        known_coords = LABO_COORDINATES if 'LABO_COORDINATES' in globals() else {}
+        delta_lat = 0.0022
+        delta_lon = 0.0032
+        for i, name in enumerate(LABO_BARANGAYS):
+            if name in known_coords:
+                barangay_centers[name] = tuple(known_coords[name])
+                continue
+            # grid placement: rows of 8
+            per_row = 8
+            row = i // per_row
+            col = i % per_row
+            lat = base_lat + (row - 3) * delta_lat  # center rows around base
+            lon = base_lon + (col - (per_row // 2)) * delta_lon
+            barangay_centers[name] = (round(lat, 6), round(lon, 6))
+
+    # Build a list for iteration
+    centers_list = [(name, coords[0], coords[1]) for name, coords in barangay_centers.items()]
+
+    def nearest_barangay(lat, lon):
+        best_name = 'Unknown'
+        best_dist = float('inf')
+        for name, c_lat, c_lon in centers_list:
+            d = _haversine_meters(lat, lon, c_lat, c_lon)
+            if d < best_dist:
+                best_dist = d
+                best_name = name
+        if best_dist <= max_radius_m:
+            return best_name
+        else:
+            return 'Unknown'
+
+    # Use centroid of geometry (lat=centroid.y, lon=centroid.x)
+    try:
+        centroids = roads_gdf.geometry.centroid
+    except Exception:
+        # Try converting to geometry column if necessary
+        centroids = roads_gdf.apply(lambda r: r.geometry.centroid if hasattr(r, 'geometry') else None, axis=1)
+
+    barangays = []
+    for c in centroids:
+        if c is None:
+            barangays.append('Unknown')
+            continue
+        lat = float(c.y)
+        lon = float(c.x)
+        barangays.append(nearest_barangay(lat, lon))
+
+    roads_gdf = roads_gdf.copy()
+    roads_gdf['barangay'] = barangays
+    return roads_gdf
+
+
+def _generate_timestamped_vehicle_geojson(roads, start_time=None, vehicles_per_road=1, fps=30, rng: Optional[random.Random] = None):
     """
     Generate a GeoJSON FeatureCollection for TimestampedGeoJson plugin where each feature
     represents a vehicle moving along a LineString path with matching 'times' array.
@@ -933,6 +1068,7 @@ def _generate_timestamped_vehicle_geojson(roads, start_time=None, vehicles_per_r
 
     features = []
 
+    r = rng or random
     for road_idx, road in enumerate(roads):
         coords_latlng = road.get('coordinates', [])
         if len(coords_latlng) < 2:
@@ -942,10 +1078,10 @@ def _generate_timestamped_vehicle_geojson(roads, start_time=None, vehicles_per_r
         for v_idx in range(vehicles_per_road):
             # Choose a vehicle speed (m/s) - vary per vehicle
             # realistic range: cars 8-16 m/s (~30-60 km/h), bikes slower
-            speed_mps = random.uniform(8.0, 16.0)
+            speed_mps = r.uniform(8.0, 16.0)
 
             # Choose a start offset on the road [0..1]
-            start_offset = random.uniform(0, 0.5)
+            start_offset = r.uniform(0, 0.5)
 
             # Build the path coordinates as GeoJSON ([lon, lat]) and compute distances
             geojson_coords = []
@@ -968,36 +1104,79 @@ def _generate_timestamped_vehicle_geojson(roads, start_time=None, vehicles_per_r
                 running += d
                 cum_dists.append(running)
 
-            # Determine time for each point as cumulative distance / speed
-            times = []
-            base_time = start_time + timedelta(seconds=random.uniform(0, 10))
-            for dist in cum_dists:
-                t = base_time + timedelta(seconds=(dist / speed_mps))
-                times.append(t.isoformat() + 'Z')
+            # Determine time for the whole road (total length / speed)
+            total_time = total_length / speed_mps
+            base_time = start_time + timedelta(seconds=r.uniform(0, 10))
+
+                # Create a dense sample of times at the requested fps
+            fps = int(fps or 60)
+            if fps <= 0:
+                fps = 1
+            if fps > 60:
+                fps = 60
+            dt = 1.0 / fps
+            # times for the whole path [0 .. total_time] sampled every dt
+            time_offsets = [i * dt for i in range(int(total_time / dt) + 1)]
+
+            # Interpolate coordinates for each time offset so that we have one coordinate per timestamp
+            path_coords = []
+            path_times = []
+            for offset in time_offsets:
+                dist_at_t = min(offset * speed_mps, total_length)
+                # Find segment
+                seg_idx = 0
+                while seg_idx < len(cum_dists) - 1 and cum_dists[seg_idx+1] < dist_at_t:
+                    seg_idx += 1
+                # Interpolate between seg_idx and seg_idx+1
+                if seg_idx >= len(cum_dists) - 1:
+                    # we're at or beyond the last point
+                    lat, lon = coords_latlng[-1]
+                else:
+                    dist0 = cum_dists[seg_idx]
+                    dist1 = cum_dists[seg_idx+1]
+                    # avoid division by zero
+                    if dist1 - dist0 == 0:
+                        frac = 0
+                    else:
+                        frac = (dist_at_t - dist0) / (dist1 - dist0)
+                    lat0, lon0 = coords_latlng[seg_idx]
+                    lat1, lon1 = coords_latlng[seg_idx+1]
+                    lat = lat0 + frac * (lat1 - lat0)
+                    lon = lon0 + frac * (lon1 - lon0)
+                path_coords.append([lon, lat])
+                path_times.append((base_time + timedelta(seconds=offset)).isoformat() + 'Z')
 
             # If we want vehicles to start mid-segment, we can rotate the coords/times arrays
             # to apply start_offset (fraction of total length)
             offset_m = start_offset * total_length
-            # find index to rotate
+            # find index on the densified path to rotate
+            dense_cum_dists = [0.0]
+            running = 0.0
+            for i in range(1, len(path_coords)):
+                prev = path_coords[i-1]
+                curr = path_coords[i]
+                d = _haversine_meters(prev[1], prev[0], curr[1], curr[0])
+                running += d
+                dense_cum_dists.append(running)
+
             rot_idx = 0
-            for i, d in enumerate(cum_dists):
+            for i, d in enumerate(dense_cum_dists):
                 if d >= offset_m:
                     rot_idx = i
                     break
 
-            # rotate so vehicle starts from rot_idx and append earlier coords with times increased
+            # rotate so vehicle starts from rot_idx and append earlier coords with times increased by total_time
             if rot_idx > 0:
-                # compose new coords and times starting from rot_idx to end, then beginning to rot_idx
-                path_coords = geojson_coords[rot_idx:] + geojson_coords[:rot_idx+1]
-                path_times = times[rot_idx:] + [ (datetime.fromisoformat(times[0].replace('Z','')) + (datetime.fromisoformat(times[-1].replace('Z','')) - datetime.fromisoformat(times[0].replace('Z','')))).isoformat() + 'Z' ]
-                # The above adjustment ensures times array length aligns but may not be perfect.
-            else:
-                path_coords = geojson_coords
-                path_times = times
+                path_coords = path_coords[rot_idx:] + path_coords[:rot_idx]
+                # Adjust times to keep monotonicity by pushing the wrapped times to the end
+                wrapped_times = []
+                for t in path_times[:rot_idx]:
+                    wrapped_times.append((datetime.fromisoformat(t.replace('Z','')) + timedelta(seconds=total_time)).isoformat() + 'Z')
+                path_times = path_times[rot_idx:] + wrapped_times
 
             # Keep times length equal to coordinates length
+            # Ensure equal lengths for coords and times (they should be equal by construction)
             if len(path_times) != len(path_coords):
-                # If mismatch, truncate or expand as needed (simple alignment)
                 minlen = min(len(path_times), len(path_coords))
                 path_coords = path_coords[:minlen]
                 path_times = path_times[:minlen]

@@ -7,7 +7,7 @@ from typing import Dict, Optional
 import pandas as pd
 
 from constants import accident_types
-from utils import sample_from_data_sources, build_environment_state, suggest_interventions, instantiate_entities, prepare_accident_entities
+from utils import sample_from_data_sources, build_environment_state, suggest_interventions, instantiate_entities, prepare_accident_entities, rng_for_location
 from models import DriverProfile
 from simulation import simulate_collision
 
@@ -22,7 +22,8 @@ def run_monte_carlo_simulations(runs: int = 50, apply_interventions: bool = Fals
         driver_profile = DriverProfile.from_factor(human_factor)
         intervention_plan = suggest_interventions(location, cause, environment.road_condition, environment.lighting_condition, human_factor)
         accident_type = random.choice(list(accident_types.keys()))
-        vehicle1_spec, vehicle2_spec, pedestrian_spec, angle = prepare_accident_entities(accident_type, primary_vehicle_type)
+        rng = rng_for_location(location)
+        vehicle1_spec, vehicle2_spec, pedestrian_spec, angle = prepare_accident_entities(accident_type, primary_vehicle_type, rng)
         vehicle1, vehicle2, pedestrian = instantiate_entities(vehicle1_spec, vehicle2_spec, pedestrian_spec)
 
         _, _, _, _, _, impact_force, severity, risk_score, _ = simulate_collision(
@@ -68,7 +69,8 @@ def run_monte_carlo_intervention_analysis(runs: int = 20) -> Dict:
         driver_profile = DriverProfile.from_factor(human_factor)
         intervention_plan = suggest_interventions(location, cause, environment.road_condition, environment.lighting_condition, human_factor)
         accident_type = random.choice(list(accident_types.keys()))
-        vehicle1_spec, vehicle2_spec, pedestrian_spec, angle = prepare_accident_entities(accident_type, primary_vehicle_type)
+        rng = rng_for_location(location)
+        vehicle1_spec, vehicle2_spec, pedestrian_spec, angle = prepare_accident_entities(accident_type, primary_vehicle_type, rng)
 
         # Baseline run
         vehicle1_base, vehicle2_base, pedestrian_base = instantiate_entities(vehicle1_spec, vehicle2_spec, pedestrian_spec)

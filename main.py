@@ -7,7 +7,7 @@ import numpy as np
 from datetime import datetime
 
 from constants import accident_types
-from utils import sample_from_data_sources, build_environment_state, suggest_interventions, prepare_accident_entities, instantiate_entities
+from utils import sample_from_data_sources, build_environment_state, suggest_interventions, prepare_accident_entities, instantiate_entities, rng_for_location
 from models import DriverProfile
 from simulation import simulate_collision
 from reporting import print_simulation_steps, generate_report
@@ -22,13 +22,14 @@ if __name__ == "__main__":
     
     # Sample parameters from historical data sources (PDF Materials and Methods A. Data Sources)
     cause, location, primary_vehicle_type, road_condition, lighting_condition, weather_condition, human_factor = sample_from_data_sources()
+    rng = rng_for_location(location)
     print(f"Based on data sources: Location={location}, Cause={cause}, Road={road_condition}, Lighting={lighting_condition}, Weather={weather_condition}, Human Factor={human_factor}")
 
     environment = build_environment_state(location, road_condition, lighting_condition, weather_condition)
     driver_profile = DriverProfile.from_factor(human_factor)
     intervention_plan = suggest_interventions(location, cause, environment.road_condition, environment.lighting_condition, human_factor)
 
-    vehicle1_spec, vehicle2_spec, pedestrian_spec, angle_of_impact = prepare_accident_entities(accident_type, primary_vehicle_type)
+    vehicle1_spec, vehicle2_spec, pedestrian_spec, angle_of_impact = prepare_accident_entities(accident_type, primary_vehicle_type, rng)
     baseline_vehicle1, baseline_vehicle2, baseline_pedestrian = instantiate_entities(vehicle1_spec, vehicle2_spec, pedestrian_spec)
 
     initial_v1 = vehicle1_spec["velocity"] if vehicle1_spec else None
@@ -152,7 +153,8 @@ if __name__ == "__main__":
         pedestrian_name=baseline_pedestrian.name if baseline_pedestrian else None,
         location=location,
         labo_geojson_path=geojson_path,
-        collision_time=sim_time
+        collision_time=sim_time,
+        target_fps=30
     )
 
     # Persist results for longitudinal analysis (append rather than overwrite)

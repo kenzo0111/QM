@@ -7,8 +7,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from datetime import datetime
 
-from constants import accident_types
-from utils import sample_from_data_sources, build_environment_state, suggest_interventions, prepare_accident_entities, instantiate_entities
+from constants import accident_types, LABO_COORDINATES, LABO_BARANGAYS
+from utils import sample_from_data_sources, build_environment_state, suggest_interventions, prepare_accident_entities, instantiate_entities, rng_for_location
 from models import DriverProfile
 from simulation import simulate_collision
 from reporting import print_simulation_steps, generate_report, generate_pdf_report, create_map_visualization
@@ -22,14 +22,15 @@ speed = st.sidebar.slider("Vehicle Speed (km/h)", 0, 150, 60)
 weather_options = ["Sunny", "Rainy", "Foggy", "Cloudy"]
 weather = st.sidebar.selectbox("Weather", weather_options)
 accident_type = st.sidebar.selectbox("Accident Type", list(accident_types.keys()))
-location = st.sidebar.selectbox("Location", ["Bayabas", "Main Highway", "Barangay 1", "Barangay 2", "Barangay 3", "Barangay 4", "Barangay 5"])
+location = st.sidebar.selectbox("Location", ["Main Highway"] + LABO_BARANGAYS)
 moving_vehicles = st.sidebar.checkbox("Animate moving vehicles on map", value=True)
 vehicle_roads_limit = st.sidebar.slider("Max roads animated", 1, 100, 50)
 vehicles_per_road = st.sidebar.slider("Vehicles per animated road", 1, 3, 1)
+fps = st.sidebar.slider("Map FPS", 1, 60, 30)
 
 if st.button("Simulate Crash"):
-    # Sample parameters based on inputs
-    cause = "Overspeeding"  # Simplified
+    # Sample parameters based on inputs and location when available
+    cause, sampled_location, primary_vehicle_type, road_condition, lighting_condition, weather_condition, human_factor = sample_from_data_sources(location=location, seed_from_location=True)
     primary_vehicle_type = "Car"
     road_condition = "dry" if weather == "Sunny" else "wet"
     lighting_condition = "good"
@@ -39,7 +40,8 @@ if st.button("Simulate Crash"):
     driver_profile = DriverProfile.from_factor(human_factor)
     intervention_plan = suggest_interventions(location, cause, environment.road_condition, environment.lighting_condition, human_factor)
 
-    vehicle1_spec, vehicle2_spec, pedestrian_spec, angle_of_impact = prepare_accident_entities(accident_type, primary_vehicle_type)
+    rng = rng_for_location(location)
+    vehicle1_spec, vehicle2_spec, pedestrian_spec, angle_of_impact = prepare_accident_entities(accident_type, primary_vehicle_type, rng)
     # Override speed
     if vehicle1_spec:
         vehicle1_spec["velocity"] = speed / 3.6  # Convert km/h to m/s
@@ -92,8 +94,12 @@ if st.button("Simulate Crash"):
     st.subheader("Accident Location Map")
     try:
         # Get coordinates for the location (using Labo coordinates from constants)
-        from constants import LABO_COORDINATES
-        accident_lat, accident_lon = LABO_COORDINATES.get(location, (14.1568, 121.3997))  # Default to Labo center
+        # Resolve coordinate from constants; fallback to general Labo center
+        accident_lat, accident_lon = LABO_COORDINATES.get(location, (14.156, 122.83))
+
+        # Warn user in UI about high-FPS large-map issues
+        if fps >= 30 and moving_vehicles and (vehicle_roads_limit > 20 or vehicles_per_road > 2):
+            st.warning("High FPS with many animated roads/vehicles can create very large map HTML payloads and may slow down or crash some browsers. Try lowering FPS or reducing animated roads/vehicles.")
 
         # Create map visualization
         map_html = create_map_visualization(
@@ -104,7 +110,7 @@ if st.button("Simulate Crash"):
                      baseline_vehicle2.name if baseline_vehicle2 else "Vehicle 2",
                      baseline_pedestrian.name if baseline_pedestrian else "Pedestrian"],
             timestamp=datetime.now()
-            ,animate_vehicles=moving_vehicles, vehicle_roads_limit=vehicle_roads_limit, vehicles_per_road=vehicles_per_road)
+            ,animate_vehicles=moving_vehicles, vehicle_roads_limit=vehicle_roads_limit, vehicles_per_road=vehicles_per_road, target_fps=fps)
 
         # Display the map in Streamlit
         components.html(map_html, height=600)
