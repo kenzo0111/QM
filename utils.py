@@ -6,7 +6,7 @@ import pandas as pd
 from typing import Optional, Tuple, Dict, Any
 import zlib
 
-from constants import location_profiles, vehicle_types, accident_types
+from constants import location_profiles, vehicle_types, accident_types, barangay_names
 from models import EnvironmentState, InterventionPlan, DriverProfile
 
 
@@ -204,7 +204,7 @@ def generate_recommendations(cause: str, road_condition: str, lighting_condition
     return recs
 
 
-def sample_from_data_sources(location: Optional[str] = None, seed_from_location: bool = False) -> Tuple[str, str, str, str, str, str, str]:
+def sample_from_data_sources(location: Optional[str] = None, seed_from_location: bool = False, force_uniform_location: bool = False) -> Tuple[str, str, str, str, str, str, str]:
     """Sample accident parameters from historical data sources"""
     try:
         accident_data = pd.read_csv('accident_data.csv')
@@ -235,7 +235,17 @@ def sample_from_data_sources(location: Optional[str] = None, seed_from_location:
 
     # Map data to simulation parameters
     cause = row.get('cause', 'Overspeeding')
-    location = row.get('location', 'Bayabas')
+    if force_uniform_location and location is None:
+        # Uniformly sample location across known profiles when requested. This helps avoid
+        # strongly biased historical datasets (e.g., too many 'Main Highway' entries).
+        try:
+            location_choices = barangay_names
+            import random as _random
+            location = _random.choice(location_choices)
+        except Exception:
+            location = row.get('location', 'Bayabas')
+    else:
+        location = row.get('location', 'Bayabas')
 
     # Map vehicle type
     vehicle_type_map = {

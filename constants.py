@@ -119,19 +119,10 @@ intervention_effects = {
     "community_seminar": {"reaction_multiplier": 0.95, "driver_risk_multiplier": 0.95, "description": "Barangay-wide awareness seminars targeting human factors."}
 }
 
-# Labo coordinates for map visualization
-LABO_COORDINATES = {
-    "Bayabas": (14.158, 122.825),
-    "Main Highway": (14.15, 122.83),
-    "Barangay 1": (14.16, 122.82),
-    "Barangay 2": (14.155, 122.828),
-    "Barangay 3": (14.162, 122.826),
-    "Barangay 4": (14.148, 122.832),
-    "Barangay 5": (14.165, 122.824)
-}
+# Labo barangays with coordinates for map visualization
 
 # Full list of barangays for Labo, Camarines Norte (52)
-LABO_BARANGAYS = [
+barangay_names = [
     "Anahaw (Poblacion)",
     "Anameam",
     "Awitan",
@@ -185,3 +176,40 @@ LABO_BARANGAYS = [
     "Tigbinan",
     "Tulay na Lupa",
 ]
+
+# If you want deterministic coordinates for all LABO barangays (e.g. for map
+# placement or for testing), we provide an approximate grid of center points
+# assigned to each barangay. These are NOT authoritative geographic
+# coordinates and should be replaced with official barangay centroids if you
+# have them (e.g., from shapefiles).
+def _generate_labo_coordinates(barangays, base_lat=14.156, base_lon=122.83,
+                              cols=8, lat_spacing=0.005, lon_spacing=0.004):
+    """Generate a deterministic grid of coordinates around a base location.
+
+    Arguments:
+        barangays: iterable of barangay names
+        base_lat, base_lon: center of grid
+        cols: number of columns in grid (rows are derived)
+        lat_spacing, lon_spacing: grid spacing in degrees
+
+    Returns a dict mapping barangay name -> (lat, lon).
+    """
+    coords = {}
+    import math
+    n = len(barangays)
+    rows = math.ceil(n / cols)
+    # Center offsets so grid is centered around base lat/lon
+    row_offset = (rows - 1) / 2
+    col_offset = (cols - 1) / 2
+    for i, name in enumerate(barangays):
+        row = i // cols
+        col = i % cols
+        lat = base_lat + ((row - row_offset) * lat_spacing)
+        lon = base_lon + ((col - col_offset) * lon_spacing)
+        coords[name] = (round(lat, 6), round(lon, 6))
+    return coords
+
+# Generate coordinates for all barangays and override with specific values where available
+_generated_coords = _generate_labo_coordinates(barangay_names)
+LABO_BARANGAYS = _generated_coords
+LABO_BARANGAYS["Bayabas"] = (14.158, 122.825)

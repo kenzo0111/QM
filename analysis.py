@@ -17,7 +17,7 @@ def run_monte_carlo_simulations(runs: int = 50, apply_interventions: bool = Fals
 
     results = []
     for _ in range(runs):
-        cause, location, primary_vehicle_type, road_condition, lighting_condition, weather_condition, human_factor = sample_from_data_sources()
+        cause, location, primary_vehicle_type, road_condition, lighting_condition, weather_condition, human_factor = sample_from_data_sources(force_uniform_location=True)
         environment = build_environment_state(location, road_condition, lighting_condition, weather_condition)
         driver_profile = DriverProfile.from_factor(human_factor)
         intervention_plan = suggest_interventions(location, cause, environment.road_condition, environment.lighting_condition, human_factor)
@@ -37,6 +37,7 @@ def run_monte_carlo_simulations(runs: int = 50, apply_interventions: bool = Fals
             environment=environment,
             driver_profile=driver_profile,
             interventions=intervention_plan.interventions if apply_interventions and intervention_plan.interventions else None,
+            location=location,
             verbose=False
         )
 
@@ -64,7 +65,7 @@ def run_monte_carlo_intervention_analysis(runs: int = 20) -> Dict:
     intervention_records = []
 
     for _ in range(runs):
-        cause, location, primary_vehicle_type, road_condition, lighting_condition, weather_condition, human_factor = sample_from_data_sources()
+        cause, location, primary_vehicle_type, road_condition, lighting_condition, weather_condition, human_factor = sample_from_data_sources(force_uniform_location=True)
         environment = build_environment_state(location, road_condition, lighting_condition, weather_condition)
         driver_profile = DriverProfile.from_factor(human_factor)
         intervention_plan = suggest_interventions(location, cause, environment.road_condition, environment.lighting_condition, human_factor)
@@ -85,6 +86,7 @@ def run_monte_carlo_intervention_analysis(runs: int = 20) -> Dict:
             environment=environment,
             driver_profile=driver_profile,
             interventions=None,
+            location=location,
             verbose=False
         )
         baseline_records.append({
@@ -106,6 +108,7 @@ def run_monte_carlo_intervention_analysis(runs: int = 20) -> Dict:
             environment=environment,
             driver_profile=driver_profile,
             interventions=intervention_plan.interventions if intervention_plan.interventions else None,
+            location=location,
             verbose=False
         )
         intervention_records.append({

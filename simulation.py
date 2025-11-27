@@ -22,12 +22,15 @@ def simulate_collision(
     environment: Optional[EnvironmentState] = None,
     driver_profile: Optional[DriverProfile] = None,
     interventions: Optional[List[str]] = None,
-    verbose: bool = True
+    verbose: bool = True,
+    location: Optional[str] = None
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, float, float, str, Optional[float], pd.DataFrame, str]:
     """
     Simulate the motion of two vehicles until collision or time out.
     Assume vehicle1 is behind vehicle2 for rear-end collision.
     angle_of_impact: 0 for rear-end, 180 for head-on, etc. (in degrees)
+    location: name of the location (e.g., barangay or Main Highway) for reporting and ML prediction. If None,
+              ML prediction falls back to 'Main Highway'.
     """
     # Set friction and reaction using environment-aware modeling
     if environment:
@@ -213,16 +216,51 @@ def simulate_collision(
     from utils import calculate_risk_score
     risk_score = calculate_risk_score(impact_force, severity, environment, driver_profile)
 
+    # Add location metadata to sim_data when available and ensure simulation returns it
+    try:
+        from constants import LABO_BARANGAYS
+        if 'location' not in sim_data.columns:
+            sim_data['location'] = None
+        if 'latitude' not in sim_data.columns:
+            sim_data['latitude'] = None
+        if 'longitude' not in sim_data.columns:
+            sim_data['longitude'] = None
+    except Exception:
+        LABO_BARANGAYS = {}
+
+    # Populate columns if a location was passed
+    if location:
+        sim_data['location'] = location
+        coords = LABO_BARANGAYS.get(location)
+        if coords:
+            sim_data['latitude'] = coords[0]
+            sim_data['longitude'] = coords[1]
+
     # ML Severity Prediction
     try:
         from ml_predictor import get_severity_prediction
-        lighting_desc = 'Daylight' if environment.lighting_condition == 'good' else 'Night'
-        road_desc = {'dry': 'Dry road', 'wet': 'Wet road', 'slippery': 'Slippery surface'}.get(environment.road_condition, environment.road_condition)
+        # Determine descriptors with safe fallbacks
+        lighting_desc = 'Daylight' if (environment and environment.lighting_condition == 'good') else 'Night'
+        road_desc = {
+            'dry': 'Dry road', 'wet': 'Wet road', 'slippery': 'Slippery surface'
+        }.get(environment.road_condition if environment else 'dry', 'Dry road')
+
+        # Prefer a location attribute passed in environment or simulated metadata. If a caller
+        # supplies a `location` variable, it should set the sim_data['location'] column after
+        # calling simulate_collision or pass an explicit location parameter to the function.
+        # Keep backwards compatibility by falling back to "Main Highway".
+        sim_location = None
+        if 'location' in sim_data.columns and sim_data['location'].notna().any():
+            sim_location = sim_data['location'].iloc[0]
+        # default fallback
+        if not sim_location:
+            sim_location = 'Main Highway'
+
         predicted_severity, confidence = get_severity_prediction(
             cause="Overspeeding",  # Simplified, could be passed as parameter
-            location="Main Highway",  # Simplified
+            location=sim_location,
             vehicle_type="Car",  # Simplified
-            weather=environment.weather_condition,
+            weather=(environment.weather_condition if environment else 'Sunny'),
             lighting=lighting_desc,
             road_characteristics=road_desc,
             human_factors=driver_profile.factor if driver_profile else "None"

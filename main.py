@@ -21,7 +21,7 @@ if __name__ == "__main__":
     print(f"Simulating accident type: {accident_type}")
     
     # Sample parameters from historical data sources (PDF Materials and Methods A. Data Sources)
-    cause, location, primary_vehicle_type, road_condition, lighting_condition, weather_condition, human_factor = sample_from_data_sources()
+    cause, location, primary_vehicle_type, road_condition, lighting_condition, weather_condition, human_factor = sample_from_data_sources(force_uniform_location=True)
     rng = rng_for_location(location)
     print(f"Based on data sources: Location={location}, Cause={cause}, Road={road_condition}, Lighting={lighting_condition}, Weather={weather_condition}, Human Factor={human_factor}")
 
@@ -61,6 +61,7 @@ if __name__ == "__main__":
         angle_of_impact=angle_of_impact,
         environment=environment,
         driver_profile=driver_profile,
+        location=location,
         interventions=None,
         verbose=True
     )
@@ -81,6 +82,7 @@ if __name__ == "__main__":
             angle_of_impact=angle_of_impact,
             environment=environment,
             driver_profile=driver_profile,
+            location=location,
             interventions=intervention_plan.interventions,
             verbose=False
         )

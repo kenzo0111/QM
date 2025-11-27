@@ -22,7 +22,7 @@ try:
 except ImportError as e:
     print(f"Warning: Some GIS/mapping libraries not available: {e}")
 
-from constants import accident_types, LABO_COORDINATES, LABO_BARANGAYS
+from constants import accident_types, LABO_BARANGAYS
 from utils import generate_recommendations, generate_systemic_summary, validate_with_historical, rng_for_location
 from models import EnvironmentState, DriverProfile, InterventionPlan
 
@@ -616,14 +616,14 @@ def create_map_visualization(
         pedestrian_name = kwargs.get('pedestrian_name')
         location_name = kwargs.get('location')
         collision_time = kwargs.get('collision_time')
-        # Resolve location name to lat/lon using LABO_COORDINATES and fallback grid
+        # Resolve location name to lat/lon using LABO_BARANGAYS and fallback grid
         location_coords = {}
         base_lat, base_lon = 14.156, 122.83
         delta_lat = 0.0022
         delta_lon = 0.0032
         # seed with constants mapping
-        if isinstance(LABO_COORDINATES, dict):
-            for k, v in LABO_COORDINATES.items():
+        if isinstance(LABO_BARANGAYS, dict):
+            for k, v in LABO_BARANGAYS.items():
                 try:
                     location_coords[k] = [float(v[0]), float(v[1])]
                 except Exception:
@@ -997,12 +997,12 @@ def _assign_barangay_names(roads_gdf, barangay_centers: dict | None = None, max_
     """
     if barangay_centers is None:
         # Build default centers using the LABO_BARANGAYS list. Where available, prefer
-        # coordinates from LABO_COORDINATES; otherwise create a small grid around the
+        # coordinates from LABO_BARANGAYS; otherwise create a small grid around the
         # Labo town center (14.156, 122.83) for consistent but approximate positions.
         base_lat, base_lon = 14.156, 122.83
         barangay_centers = {}
-        # Use any explicit coords in LABO_COORDINATES
-        known_coords = LABO_COORDINATES if 'LABO_COORDINATES' in globals() else {}
+        # Use any explicit coords in LABO_BARANGAYS
+        known_coords = LABO_BARANGAYS if 'LABO_BARANGAYS' in globals() else {}
         delta_lat = 0.0022
         delta_lon = 0.0032
         for i, name in enumerate(LABO_BARANGAYS):

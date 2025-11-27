@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from datetime import datetime
 
-from constants import accident_types, LABO_COORDINATES, LABO_BARANGAYS
+from constants import accident_types, LABO_BARANGAYS
 from utils import sample_from_data_sources, build_environment_state, suggest_interventions, prepare_accident_entities, instantiate_entities, rng_for_location
 from models import DriverProfile
 from simulation import simulate_collision
@@ -55,7 +55,8 @@ if st.button("Simulate Crash"):
         accident_type=accident_type,
         environment=environment,
         driver_profile=driver_profile,
-        verbose=False
+        verbose=False,
+        location=location
     )
 
     st.success(f"Crash Detected! Severity: {severity.capitalize()}, Impact Force: {impact_force:.0f} N")
@@ -95,7 +96,7 @@ if st.button("Simulate Crash"):
     try:
         # Get coordinates for the location (using Labo coordinates from constants)
         # Resolve coordinate from constants; fallback to general Labo center
-        accident_lat, accident_lon = LABO_COORDINATES.get(location, (14.156, 122.83))
+        accident_lat, accident_lon = LABO_BARANGAYS.get(location, (14.156, 122.83))
 
         # Warn user in UI about high-FPS large-map issues
         if fps >= 30 and moving_vehicles and (vehicle_roads_limit > 20 or vehicles_per_road > 2):
