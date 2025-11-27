@@ -22,7 +22,7 @@ speed = st.sidebar.slider("Vehicle Speed (km/h)", 0, 150, 60)
 weather_options = ["Sunny", "Rainy", "Foggy", "Cloudy"]
 weather = st.sidebar.selectbox("Weather", weather_options)
 accident_type = st.sidebar.selectbox("Accident Type", list(accident_types.keys()))
-location = st.sidebar.selectbox("Location", ["Main Highway"] + LABO_BARANGAYS)
+location = st.sidebar.selectbox("Location", ["Main Highway"] + list(LABO_BARANGAYS.keys()))
 moving_vehicles = st.sidebar.checkbox("Animate moving vehicles on map", value=True)
 vehicle_roads_limit = st.sidebar.slider("Max roads animated", 1, 100, 50)
 vehicles_per_road = st.sidebar.slider("Vehicles per animated road", 1, 3, 1)
