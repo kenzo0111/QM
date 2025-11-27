@@ -108,7 +108,21 @@ def print_simulation_steps(accident_type: str, cause: str, location: str, road_c
         speed_kmh = np.linalg.norm(vehicle2.velocity) * 3.6
         print(f"   - Vehicle 2: {vehicle2.name} (Mass: {vehicle2.mass} kg, Initial Speed: {speed_kmh:.1f} km/h)")
     if pedestrian:
-        print(f"   - Pedestrian: {pedestrian.name} (Mass: {pedestrian.mass} kg, Position: {pedestrian.position:.1f} m)")
+        pos = getattr(pedestrian, 'position', None)
+        # Format position based on whether it's a numpy array/vector or a scalar
+        if pos is None:
+            pos_str = 'Unknown'
+        else:
+            try:
+                # If iterable (np.ndarray, list, tuple) and has at least two entries, print as (x, y)
+                if hasattr(pos, '__len__') and len(pos) >= 2:
+                    pos_str = f"({float(pos[0]):.1f}, {float(pos[1]):.1f})"
+                else:
+                    pos_str = f"{float(pos):.1f}"
+            except Exception:
+                # Fallback to string representation
+                pos_str = str(pos)
+        print(f"   - Pedestrian: {pedestrian.name} (Mass: {pedestrian.mass} kg, Position: {pos_str} m)")
     
     print(f"\nStep 3: Environmental Factors Applied")
     friction_map = {"dry": 0.8, "wet": 0.5, "slippery": 0.1}
@@ -190,7 +204,19 @@ def print_simulation_steps(accident_type: str, cause: str, location: str, road_c
         speed_kmh = np.linalg.norm(vehicle2.velocity) * 3.6
         print(f"   - Vehicle 2: {vehicle2.name} (Mass: {vehicle2.mass} kg, Initial Speed: {speed_kmh:.1f} km/h)")
     if pedestrian:
-        print(f"   - Pedestrian: {pedestrian.name} (Mass: {pedestrian.mass} kg, Position: {pedestrian.position:.1f} m)")
+        pos = getattr(pedestrian, 'position', None)
+        # Format position based on whether it's a numpy array/vector or a scalar
+        if pos is None:
+            pos_str = 'Unknown'
+        else:
+            try:
+                if hasattr(pos, '__len__') and len(pos) >= 2:
+                    pos_str = f"({float(pos[0]):.1f}, {float(pos[1]):.1f})"
+                else:
+                    pos_str = f"{float(pos):.1f}"
+            except Exception:
+                pos_str = str(pos)
+        print(f"   - Pedestrian: {pedestrian.name} (Mass: {pedestrian.mass} kg, Position: {pos_str} m)")
     
     print(f"\nStep 3: Environmental Factors Applied")
     friction_map = {"dry": 0.8, "wet": 0.5, "slippery": 0.1}
@@ -529,14 +555,15 @@ def create_labo_roads_geojson(force_regenerate: bool = False) -> Path | None:
 
 
 def create_map_visualization(
-    accident_location: tuple[float, float],
-    accident_type: str,
-    severity: str,
-    entities: List[str],
-    timestamp: datetime,
+    accident_location_or_sim_data: Any,
+    accident_type: Optional[str] = None,
+    severity: Optional[str] = None,
+    entities: Optional[List[str]] = None,
+    timestamp: Optional[datetime] = None,
     animate_vehicles: bool = True,
     vehicle_roads_limit: int = 50,
-    vehicles_per_road: int = 1
+    vehicles_per_road: int = 1,
+    **kwargs
 ) -> str:
     """
     Creates a map visualization showing the accident location and relevant information.
@@ -544,7 +571,51 @@ def create_map_visualization(
     """
     print("\nStarting map visualization process...")
 
-    accident_lat, accident_lon = accident_location
+    # Backwards-compatible wrapper: support two calling styles
+    # 1) (accident_location: (lat, lon), accident_type, severity, entities, timestamp, ...)
+    # 2) (sim_data, vehicle1_name=..., vehicle2_name=..., pedestrian_name=..., location=<loc name>, labo_geojson_path=..., collision_time=...)
+    accident_lat, accident_lon = None, None
+    labo_geojson_path = kwargs.get('labo_geojson_path')
+    if hasattr(accident_location_or_sim_data, 'columns'):
+        # Called with sim_data
+        sim_data = accident_location_or_sim_data
+        # extract names from kwargs
+        vehicle1_name = kwargs.get('vehicle1_name')
+        vehicle2_name = kwargs.get('vehicle2_name')
+        pedestrian_name = kwargs.get('pedestrian_name')
+        location_name = kwargs.get('location')
+        collision_time = kwargs.get('collision_time')
+        # Resolve location name to lat/lon if possible
+        location_coords = {
+            'Bayabas': [14.158, 122.825],
+            'Main Highway': [14.156, 122.83],
+            'Barangay 1': [14.152, 122.835],
+            'Barangay 2': [14.154, 122.828],
+            'Barangay 3': [14.160, 122.832],
+            'Barangay 4': [14.158, 122.838],
+            'Barangay 5': [14.162, 122.826],
+        }
+        if location_name and location_name in location_coords:
+            accident_lat, accident_lon = location_coords.get(location_name)
+        else:
+            # Default to center of Labo if location can't be resolved
+            accident_lat, accident_lon = 14.156, 122.83
+        # Use provided entities list or construct from names
+        if entities is None:
+            entities = [n for n in (vehicle1_name, vehicle2_name, pedestrian_name) if n]
+        # accident_type/severity/timestamp may be provided; default to values if missing
+        accident_type = accident_type or 'unknown'
+        severity = severity or 'unknown'
+        timestamp = timestamp or datetime.now()
+    else:
+        # Old style: first arg is a tuple (lat, lon)
+        accident_location = accident_location_or_sim_data
+        try:
+            accident_lat, accident_lon = accident_location
+        except Exception:
+            accident_lat, accident_lon = (14.156, 122.83)
+        # Entities default
+        entities = entities or []
 
     # Create a base map centered on the accident location
     m = folium.Map(location=[accident_lat, accident_lon], zoom_start=15)
@@ -643,7 +714,10 @@ def create_map_visualization(
     ).add_to(m)
 
     # Add Labo road network overlay if available
-    labo_geojson_path = Path(__file__).resolve().parent / "GIS" / "labo_roads.geojson"
+    if labo_geojson_path:
+        labo_geojson_path = Path(labo_geojson_path)
+    else:
+        labo_geojson_path = Path(__file__).resolve().parent / "GIS" / "labo_roads.geojson"
     if labo_geojson_path.exists():
         try:
             roads_gdf = gpd.read_file(labo_geojson_path)

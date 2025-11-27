@@ -134,7 +134,9 @@ def simulate_collision(
         
         if collided:
             if verbose:
-                print(f"Collision detected at time {time:.2f}s, position {vehicle1.position:.2f}m")
+                # vehicle positions are numpy arrays [x, y]; report x-coordinate for clarity
+                pos_x = float(vehicle1.position[0]) if hasattr(vehicle1, 'position') and len(vehicle1.position) > 0 else float(vehicle1.position)
+                print(f"Collision detected at time {time:.2f}s, position {pos_x:.2f} m")
             # Calculate impact force
             if accident_type == "pedestrian":
                 v1_initial = velocities[vehicle1.name][-1][0]  # current velocity x-component before collision
