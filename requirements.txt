@@ -10,10 +10,6 @@ osmnx
 folium
 shapely
 
-# Machine Learning
-scikit-learn
-joblib
-
 # PDF generation
 reportlab
 

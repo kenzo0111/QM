@@ -26,7 +26,7 @@ def run_monte_carlo_simulations(runs: int = 50, apply_interventions: bool = Fals
         vehicle1_spec, vehicle2_spec, pedestrian_spec, angle = prepare_accident_entities(accident_type, primary_vehicle_type, rng)
         vehicle1, vehicle2, pedestrian = instantiate_entities(vehicle1_spec, vehicle2_spec, pedestrian_spec)
 
-        _, _, _, _, _, impact_force, severity, risk_score, _ = simulate_collision(
+        _, _, _, _, _, impact_force, severity, risk_score, _, _ = simulate_collision(
             vehicle1,
             vehicle2,
             pedestrian=pedestrian,

@@ -237,36 +237,6 @@ def simulate_collision(
             sim_data['longitude'] = coords[1]
 
     # ML Severity Prediction
-    try:
-        from ml_predictor import get_severity_prediction
-        # Determine descriptors with safe fallbacks
-        lighting_desc = 'Daylight' if (environment and environment.lighting_condition == 'good') else 'Night'
-        road_desc = {
-            'dry': 'Dry road', 'wet': 'Wet road', 'slippery': 'Slippery surface'
-        }.get(environment.road_condition if environment else 'dry', 'Dry road')
-
-        # Prefer a location attribute passed in environment or simulated metadata. If a caller
-        # supplies a `location` variable, it should set the sim_data['location'] column after
-        # calling simulate_collision or pass an explicit location parameter to the function.
-        # Keep backwards compatibility by falling back to "Main Highway".
-        sim_location = None
-        if 'location' in sim_data.columns and sim_data['location'].notna().any():
-            sim_location = sim_data['location'].iloc[0]
-        # default fallback
-        if not sim_location:
-            sim_location = 'Main Highway'
-
-        predicted_severity, confidence = get_severity_prediction(
-            cause="Overspeeding",  # Simplified, could be passed as parameter
-            location=sim_location,
-            vehicle_type="Car",  # Simplified
-            weather=(environment.weather_condition if environment else 'Sunny'),
-            lighting=lighting_desc,
-            road_characteristics=road_desc,
-            human_factors=driver_profile.factor if driver_profile else "None"
-        )
-        ml_prediction = f"Predicted Severity: {predicted_severity.capitalize()} ({confidence:.1%} confidence)"
-    except Exception as e:
-        ml_prediction = f"ML Prediction unavailable: {e}"
+    ml_prediction = "ML Prediction disabled"
 
     return np.array(pos1), np.array(pos2), np.array(vel1), np.array(vel2), time, impact_force, severity, risk_score, sim_data, ml_prediction
