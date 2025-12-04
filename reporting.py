@@ -344,29 +344,67 @@ Vehicles Involved:
     system_summary = generate_systemic_summary(cause, driver_profile, environment, intervention_plan, vehicle1, vehicle2, pedestrian, initial_v1, initial_v2)
     validation_line = validation_text or "Historical validation unavailable."
 
-    baseline_severity = comparison['baseline']['severity'] if comparison else severity
-    intervention_severity = comparison['intervention']['severity'] if comparison else severity
-    baseline_force = comparison['baseline']['impact_force'] if comparison else impact_force
-    intervention_force = comparison['intervention']['impact_force'] if comparison else impact_force
-    baseline_risk = comparison['baseline'].get('risk_score') if comparison else risk_score
-    intervention_risk = comparison['intervention'].get('risk_score') if comparison else risk_score
-    impact_force_reduction = None
-    if comparison and baseline_force:
-        impact_force_reduction = (baseline_force - intervention_force) / baseline_force * 100
-    risk_reduction = None
-    if comparison and baseline_risk:
-        risk_reduction = baseline_risk - intervention_risk
-    baseline_risk_formatted = f"{baseline_risk:.2f}" if baseline_risk is not None else "N/A"
-    intervention_risk_formatted = f"{intervention_risk:.2f}" if intervention_risk is not None else "N/A"
-    risk_change_text = (
-        f"{risk_reduction:.2f} (Baseline {baseline_risk_formatted}, Intervention {intervention_risk_formatted})"
-        if risk_reduction is not None and baseline_risk is not None and intervention_risk is not None
-        else f"0.00 (Baseline {baseline_risk_formatted}, Intervention {intervention_risk_formatted})"
-    )
-    force_reduction_text = f"{impact_force_reduction:.2f}%" if impact_force_reduction is not None else "0%"
+    # Comparison section logic
+    comparison_section = ""
+    
+    # Default values for Excel report
+    baseline_severity = "N/A"
+    intervention_severity = "N/A"
+    baseline_force = 0.0
+    intervention_force = 0.0
+    risk_change_text = "N/A"
+    force_reduction_text = "N/A"
+    baseline_risk_text = "N/A"
+    intervention_risk_text = "N/A"
+
+    if comparison:
+        baseline_dist = comparison.get('baseline', {})
+        intervention_dist = comparison.get('intervention', {})
+        
+        # Extract metrics
+        b_risk = baseline_dist.get('average_risk_score', 0)
+        i_risk = intervention_dist.get('average_risk_score', 0)
+        b_force = baseline_dist.get('average_impact_force', 0)
+        i_force = intervention_dist.get('average_impact_force', 0)
+        
+        # Update variables for Excel report
+        baseline_force = b_force
+        intervention_force = i_force
+        baseline_risk_text = f"{b_risk:.2f}" if b_risk is not None else "N/A"
+        intervention_risk_text = f"{i_risk:.2f}" if i_risk is not None else "N/A"
+        
+        # Format distributions (exclude the average keys)
+        b_sev_str = ", ".join([f"{k}: {v}" for k, v in baseline_dist.items() if k not in ['average_risk_score', 'average_impact_force']])
+        i_sev_str = ", ".join([f"{k}: {v}" for k, v in intervention_dist.items() if k not in ['average_risk_score', 'average_impact_force']])
+        
+        baseline_severity = b_sev_str
+        intervention_severity = i_sev_str
+        
+        # Calculate reductions
+        risk_red = 0
+        if b_risk:
+            risk_red = ((b_risk - i_risk) / b_risk) * 100
+            
+        force_red = 0
+        if b_force:
+            force_red = ((b_force - i_force) / b_force) * 100
+            
+        risk_change_text = f"{risk_red:.1f}%"
+        force_reduction_text = f"{force_red:.1f}%"
+
+        comparison_section = f"""
+Intervention Scenario Comparison:
+- Baseline Severity Distribution: {b_sev_str}
+- Intervention Severity Distribution: {i_sev_str}
+- Baseline Avg Impact Force: {b_force:.2f} N
+- Intervention Avg Impact Force: {i_force:.2f} N
+- Avg Risk Score Reduction: {risk_red:.1f}% ({b_risk:.2f} -> {i_risk:.2f})
+- Avg Impact Force Reduction: {force_red:.1f}%
+"""
+    else:
+        comparison_section = "\nIntervention Scenario Comparison:\n- Run 'Comparison Analysis' to populate this section.\n"
+
     intervention_desc = intervention_plan.describe() if intervention_plan else 'None'
-    baseline_risk_text = baseline_risk_formatted
-    intervention_risk_text = intervention_risk_formatted
     
     report += f"""
 
@@ -381,14 +419,7 @@ Systems Interaction Summary:
 
 Validation Against Historical Records:
 - {validation_line}
-
-Intervention Scenario Comparison:
-- Baseline Severity: {baseline_severity}
-- Intervention Severity: {intervention_severity}
-- Baseline Impact Force: {baseline_force:.2f} N
-- Intervention Impact Force: {intervention_force:.2f} N
-- Risk Score Change: {risk_change_text}
-- Impact Force Reduction: {force_reduction_text}
+{comparison_section}
 - Interventions Applied: {intervention_desc}
 
 Machine Learning Prediction:

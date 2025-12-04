@@ -20,15 +20,32 @@ st.sidebar.header("Simulation Parameters")
 # User inputs
 speed = st.sidebar.slider("Vehicle Speed (km/h)", 0, 150, 60)
 weather_options = ["Sunny", "Rainy", "Foggy", "Cloudy"]
-weather = st.sidebar.selectbox("Weather", weather_options)
-accident_type = st.sidebar.selectbox("Accident Type", list(accident_types.keys()))
-location = st.sidebar.selectbox("Location", ["Main Highway"] + list(LABO_BARANGAYS.keys()))
+weather = st.sidebar.selectbox("Weather", ["Random"] + weather_options)
+accident_type = st.sidebar.selectbox("Accident Type", ["Random"] + list(accident_types.keys()))
+location = st.sidebar.selectbox("Location", ["Random", "Main Highway"] + list(LABO_BARANGAYS.keys()))
 moving_vehicles = st.sidebar.checkbox("Animate moving vehicles on map", value=True)
 vehicle_roads_limit = st.sidebar.slider("Max roads animated", 1, 100, 50)
 vehicles_per_road = st.sidebar.slider("Vehicles per animated road", 1, 3, 1)
 fps = st.sidebar.slider("Map FPS", 1, 60, 30)
 
 if st.button("Simulate Crash"):
+    # Handle random location selection
+    if location == "Random":
+        import random
+        possible_locations = ["Main Highway"] + list(LABO_BARANGAYS.keys())
+        location = random.choice(possible_locations)
+        st.info(f"Randomly selected location: {location}")
+
+    if accident_type == "Random":
+        import random
+        accident_type = random.choice(list(accident_types.keys()))
+        st.info(f"Randomly selected accident type: {accident_type}")
+
+    if weather == "Random":
+        import random
+        weather = random.choice(weather_options)
+        st.info(f"Randomly selected weather: {weather}")
+
     # Sample parameters based on inputs and location when available
     cause, sampled_location, primary_vehicle_type, road_condition, lighting_condition, weather_condition, human_factor = sample_from_data_sources(location=location, seed_from_location=True)
     primary_vehicle_type = "Car"
@@ -145,13 +162,109 @@ if st.button("Simulate Crash"):
         comparison=None,
         ml_prediction=ml_prediction
     )
+    st.session_state['report_text'] = report
+    
+    # Store simulation parameters for later report regeneration
+    st.session_state['last_simulation'] = {
+        'vehicle1': baseline_vehicle1,
+        'vehicle2': baseline_vehicle2,
+        'pedestrian': baseline_pedestrian,
+        'accident_type': accident_type,
+        'collision_time': sim_time,
+        'impact_force': impact_force,
+        'severity': severity,
+        'road_condition': environment.road_condition,
+        'lighting': environment.lighting_condition,
+        'initial_v1': vehicle1_spec.get("velocity") if vehicle1_spec else None,
+        'initial_v2': vehicle2_spec.get("velocity") if vehicle2_spec else None,
+        'cause': cause,
+        'location': location,
+        'angle_of_impact': angle_of_impact,
+        'weather': environment.weather_condition,
+        'driver_profile': driver_profile,
+        'environment': environment,
+        'risk_score': risk_score,
+        'intervention_plan': intervention_plan,
+        'validation_text': "",
+        'ml_prediction': ml_prediction
+    }
+
     st.subheader("Generated Report")
     st.text_area("Report", report, height=300)
 
+if 'report_text' in st.session_state:
     # PDF Generation
     if st.button("Generate PDF Report"):
-        pdf_file = generate_pdf_report(report)
+        pdf_file = generate_pdf_report(st.session_state['report_text'])
         if pdf_file:
             st.success(f"PDF report generated: {pdf_file}")
         else:
             st.error("Failed to generate PDF. Install reportlab: pip install reportlab")
+
+st.markdown("---")
+st.header("Intervention Scenario Comparison")
+st.write("Run a Monte Carlo analysis to compare accident outcomes with and without recommended interventions.")
+
+if st.button("Run Comparison Analysis"):
+    with st.spinner("Running Monte Carlo simulations..."):
+        comparison_results = run_monte_carlo_intervention_analysis(runs=20)
+    
+    if comparison_results:
+        baseline = comparison_results['baseline']
+        intervention = comparison_results['intervention']
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("Baseline (No Interventions)")
+            st.metric("Avg Risk Score", baseline.get('average_risk_score', 'N/A'))
+            st.metric("Avg Impact Force", f"{baseline.get('average_impact_force', 0):.0f} N")
+            st.write("Severity Distribution:")
+            st.write({k: v for k, v in baseline.items() if k not in ['average_risk_score', 'average_impact_force']})
+            
+        with col2:
+            st.subheader("With Interventions")
+            st.metric("Avg Risk Score", intervention.get('average_risk_score', 'N/A'), 
+                     delta=round(intervention.get('average_risk_score', 0) - baseline.get('average_risk_score', 0), 2),
+                     delta_color="inverse")
+            st.metric("Avg Impact Force", f"{intervention.get('average_impact_force', 0):.0f} N",
+                     delta=f"{intervention.get('average_impact_force', 0) - baseline.get('average_impact_force', 0):.0f} N",
+                     delta_color="inverse")
+            st.write("Severity Distribution:")
+            st.write({k: v for k, v in intervention.items() if k not in ['average_risk_score', 'average_impact_force']})
+            
+        # Visualization of improvement
+        st.subheader("Improvement Analysis")
+        risk_reduction = ((baseline.get('average_risk_score', 0) - intervention.get('average_risk_score', 0)) / baseline.get('average_risk_score', 1)) * 100
+        st.success(f"Interventions reduced average risk score by {risk_reduction:.1f}%")
+
+        # Update report if a simulation has been run
+        if 'last_simulation' in st.session_state:
+            sim_params = st.session_state['last_simulation']
+            updated_report = generate_report(
+                vehicle1=sim_params['vehicle1'],
+                vehicle2=sim_params['vehicle2'],
+                pedestrian=sim_params['pedestrian'],
+                accident_type=sim_params['accident_type'],
+                collision_time=sim_params['collision_time'],
+                impact_force=sim_params['impact_force'],
+                severity=sim_params['severity'],
+                road_condition=sim_params['road_condition'],
+                lighting=sim_params['lighting'],
+                initial_v1=sim_params['initial_v1'],
+                initial_v2=sim_params['initial_v2'],
+                cause=sim_params['cause'],
+                location=sim_params['location'],
+                angle_of_impact=sim_params['angle_of_impact'],
+                weather=sim_params['weather'],
+                driver_profile=sim_params['driver_profile'],
+                environment=sim_params['environment'],
+                risk_score=sim_params['risk_score'],
+                intervention_plan=sim_params['intervention_plan'],
+                validation_text=sim_params['validation_text'],
+                comparison=comparison_results,
+                ml_prediction=sim_params['ml_prediction']
+            )
+            st.session_state['report_text'] = updated_report
+            st.info("Report updated with intervention comparison results.")
+            st.text_area("Updated Report", updated_report, height=300)
