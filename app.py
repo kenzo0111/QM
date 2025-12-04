@@ -18,14 +18,18 @@ st.title("Auto-Report System Dashboard")
 st.sidebar.header("Simulation Parameters")
 
 # User inputs
-speed = st.sidebar.slider("Vehicle Speed (km/h)", 0, 150, 60)
+random_speed = st.sidebar.checkbox("Randomize Speed")
+if random_speed:
+    speed = st.sidebar.slider("Vehicle Speed (km/h)", 0, 150, 60, disabled=True)
+else:
+    speed = st.sidebar.slider("Vehicle Speed (km/h)", 0, 150, 60)
 weather_options = ["Sunny", "Rainy", "Foggy", "Cloudy"]
 weather = st.sidebar.selectbox("Weather", ["Random"] + weather_options)
 accident_type = st.sidebar.selectbox("Accident Type", ["Random"] + list(accident_types.keys()))
 location = st.sidebar.selectbox("Location", ["Random", "Main Highway"] + list(LABO_BARANGAYS.keys()))
 moving_vehicles = st.sidebar.checkbox("Animate moving vehicles on map", value=True)
 vehicle_roads_limit = st.sidebar.slider("Max roads animated", 1, 100, 50)
-vehicles_per_road = st.sidebar.slider("Vehicles per animated road", 1, 3, 1)
+vehicles_per_road = 1
 fps = st.sidebar.slider("Map FPS", 1, 60, 30)
 
 if st.button("Simulate Crash"):
@@ -45,6 +49,11 @@ if st.button("Simulate Crash"):
         import random
         weather = random.choice(weather_options)
         st.info(f"Randomly selected weather: {weather}")
+
+    if random_speed:
+        import random
+        speed = random.randint(20, 120)
+        st.info(f"Randomly selected speed: {speed} km/h")
 
     # Sample parameters based on inputs and location when available
     cause, sampled_location, primary_vehicle_type, road_condition, lighting_condition, weather_condition, human_factor = sample_from_data_sources(location=location, seed_from_location=True)
@@ -116,8 +125,8 @@ if st.button("Simulate Crash"):
         accident_lat, accident_lon = LABO_BARANGAYS.get(location, (14.156, 122.83))
 
         # Warn user in UI about high-FPS large-map issues
-        if fps >= 30 and moving_vehicles and (vehicle_roads_limit > 20 or vehicles_per_road > 2):
-            st.warning("High FPS with many animated roads/vehicles can create very large map HTML payloads and may slow down or crash some browsers. Try lowering FPS or reducing animated roads/vehicles.")
+        if fps >= 30 and moving_vehicles and vehicle_roads_limit > 20:
+            st.warning("High FPS with many animated roads can create very large map HTML payloads and may slow down or crash some browsers. Try lowering FPS or reducing animated roads.")
 
         # Create map visualization
         map_html = create_map_visualization(

@@ -342,7 +342,6 @@ Vehicles Involved:
     recommendations = generate_recommendations(cause, road_condition, lighting, accident_type)
     recommendations_text = "\n".join(f"- {rec}" for rec in recommendations)
     system_summary = generate_systemic_summary(cause, driver_profile, environment, intervention_plan, vehicle1, vehicle2, pedestrian, initial_v1, initial_v2)
-    validation_line = validation_text or "Historical validation unavailable."
 
     # Comparison section logic
     comparison_section = ""
@@ -417,8 +416,6 @@ Recommendations:
 Systems Interaction Summary:
 - {system_summary}
 
-Validation Against Historical Records:
-- {validation_line}
 {comparison_section}
 - Interventions Applied: {intervention_desc}
 
@@ -462,7 +459,6 @@ Machine Learning Prediction:
         'Analysis': 'This simulation demonstrates how speed, road conditions, and lighting contribute to accidents.',
         'Recommendations': recommendations_text,
         'Systems Summary': system_summary,
-        'Historical Validation': validation_line,
         'Interventions Applied': intervention_desc,
         'Baseline Severity': baseline_severity,
         'Intervention Severity': intervention_severity,
